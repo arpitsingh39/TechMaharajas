@@ -1,0 +1,36 @@
+{
+  "menu.dashboard": "[translate:डॅशबोर्ड]",
+  "menu.shop_setup": "[translate:दुकान सेटअप]",
+  "menu.staff_mgmt": "[translate:कर्मचारी व्यवस्थापन]",
+  "menu.shift_schedule": "[translate:शिफ्ट वेळापत्रक]",
+  "menu.reports": "[translate:अहवाल / पेरोल]",
+
+  "welcome.title": "[translate:वर्कफोर्स अॅनालिटिक्स डॅशबोर्ड]",
+  "welcome.subtitle": "[translate:कर्मचारी कामगिरीवरील वास्तविक‑वेळ माहिती]",
+
+  "chart.daily_hours": "[translate:कर्मचार्‍यांचे दैनिक कामाचे तास]",
+  "chart.daily_hours_sub": "[translate:{day}/{month} रोजी केलेले तास]",
+  "chart.role_dist": "[translate:भूमिकेनुसार स्टाफ वाटप]",
+  "chart.role_dist_sub": "[translate:या आठवड्यात प्रत्येक भूमिकेतील एकूण कर्मचारी]",
+  "chart.weekly_dev": "[translate:आठवड्याचे तास विचलन विश्लेषण]",
+  "chart.weekly_dev_sub": "[translate:लक्ष्य तासांपासून रोजचा फरक (लक्ष्य: 10 तास)]",
+
+  "alerts.title": "[translate:सूचना व अलर्ट]",
+  "alerts.staffing.title": "[translate:स्टाफिंग अलर्ट]",
+  "alerts.staffing.body": "[translate:या आठवड्यात फक्त {count} कर्मचारी नेमले आहेत. आणखी {more} कर्मचारी जोडा.]",
+  "alerts.overtime.title": "[translate:ओव्हरटाईम अलर्ट]",
+  "alerts.overtime.body": "[translate:{name} ने या आठवड्यात {hours} तास काम केले, 40 तासांच्या मर्यादेपेक्षा जास्त.]",
+  "alerts.coverage.title": "[translate:कमी कव्हरेज]",
+  "alerts.coverage.body": "[translate:सप्ताहांत कव्हरेज कमी आहे. शनि‑रवि साठी अधिक कर्मचारी शेड्यूल करा.]",
+
+  "summary.title": "[translate:साप्ताहिक सारांश]",
+  "summary.total_staff": "[translate:एकूण कर्मचारी]",
+  "summary.hours_week": "[translate:या आठवड्यातील तास]",
+  "summary.avg_hours": "[translate:सरासरी तास/दिवस]",
+  "summary.efficiency": "[translate:कार्यक्षमता स्कोर]",
+  "summary.insight.title": "[translate:कामगिरी अंतर्दृष्टी]",
+  "summary.insight.body": "[translate:आपली टीम सरासरीपेक्षा 12% अधिक कार्यक्षम आहे. उत्तम!]",
+
+  "buttons.profile": "[translate:प्रोफाइल]",
+  "buttons.logout": "[translate:लॉगआउट]"
+}

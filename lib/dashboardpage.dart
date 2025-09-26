@@ -12,8 +12,8 @@ class DashboardShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final menu = <({String label, IconData icon, String path})>[
       (label: 'Dashboard', icon: Icons.space_dashboard, path: '/dashboard'),
-      (label: 'Shop Setup', icon: Icons.store, path: '/staff/staff_setup'),
-      (label: 'Staff Mgmt', icon: Icons.person, path: '/staff/staff_management'),
+      (label: 'Roles', icon: Icons.store, path: '/staff/staff_setup'),
+      (label: 'Staff', icon: Icons.person, path: '/staff/staff_management'),
       (label: 'Shift Schedule', icon: Icons.event_note, path: '/shiftschedule'),
       (label: 'Reports / Payroll', icon: Icons.bar_chart, path: '/reportpage'),
     ];
@@ -98,29 +98,48 @@ class DashboardShell extends StatelessWidget {
                       ),
                     ),
                   ),
+                  // Replace the old Row footer (Padding with Row) with this Column footer
                   const Divider(color: Color.fromRGBO(255, 255, 255, 0.24), height: 1),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(child: _SidebarLanguageChip()),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          tooltip: 'Profile',
-                          onPressed: () {},
-                          icon: const Icon(Icons.person, color: Colors.white),
-                        ),
-                        IconButton(
-                          tooltip: 'Logout',
-                          onPressed: () {
-                            AppState.of(context).signOut();
-                            context.go('/');
-                          },
-                          icon: const Icon(Icons.logout, color: Colors.white),
+                        // Language selector full-width
+                        _SidebarLanguageChip(),
+                        const SizedBox(height: 10),
+
+                        // Profile button full-width and upright
+                        
+                        const SizedBox(height: 10),
+
+                        // Logout button full-width and upright
+                        SizedBox(
+                          height: 40,
+                          child: FilledButton.tonal(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.white.withValues(alpha: 0.10),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: () {
+                              AppState.of(context).signOut();
+                              context.go('/');
+                            },
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.logout, size: 18),
+                                SizedBox(width: 8),
+                                Text('Logout'),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
+
                 ],
               ),
             ),

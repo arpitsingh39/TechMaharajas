@@ -1,0 +1,36 @@
+{
+  "menu.dashboard": "[translate:डैशबोर्ड]",
+  "menu.shop_setup": "[translate:दुकान सेटअप]",
+  "menu.staff_mgmt": "[translate:कर्मचारी प्रबंधन]",
+  "menu.shift_schedule": "[translate:शिफ्ट शेड्यूल]",
+  "menu.reports": "[translate:रिपोर्ट्स / पेरोल]",
+
+  "welcome.title": "[translate:वर्कफोर्स एनालिटिक्स डैशबोर्ड]",
+  "welcome.subtitle": "[translate:कर्मचारियों के प्रदर्शन पर वास्तविक समय की जानकारी]",
+
+  "chart.daily_hours": "[translate:कर्मचारियों के दैनिक कार्य घंटे]",
+  "chart.daily_hours_sub": "[translate:{day}/{month} को किए गए घंटे]",
+  "chart.role_dist": "[translate:भूमिका के अनुसार स्टाफ वितरण]",
+  "chart.role_dist_sub": "[translate:इस सप्ताह प्रत्येक भूमिका में कुल कर्मचारी]",
+  "chart.weekly_dev": "[translate:साप्ताहिक घंटे विचलन विश्लेषण]",
+  "chart.weekly_dev_sub": "[translate:लक्ष्य घंटों से दैनिक अंतर (लक्ष्य: 10 घंटे)]",
+
+  "alerts.title": "[translate:अलर्ट और सूचनाएँ]",
+  "alerts.staffing.title": "[translate:स्टाफिंग अलर्ट]",
+  "alerts.staffing.body": "[translate:इस सप्ताह केवल {count} कर्मचारी तैनात हैं। {more} और कर्मचारियों को जोड़ें.]",
+  "alerts.overtime.title": "[translate:ओवरटाइम अलर्ट]",
+  "alerts.overtime.body": "[translate:{name} ने इस सप्ताह {hours} घंटे काम किया है, जो 40 घंटे की सीमा से अधिक है.]",
+  "alerts.coverage.title": "[translate:कम कवरेज]",
+  "alerts.coverage.body": "[translate:सप्ताहांत कवरेज आदर्श से कम है। शनि–रवि के लिए अधिक स्टाफ शेड्यूल करें.]",
+
+  "summary.title": "[translate:साप्ताहिक सारांश]",
+  "summary.total_staff": "[translate:कुल कर्मचारी]",
+  "summary.hours_week": "[translate:इस सप्ताह घंटे]",
+  "summary.avg_hours": "[translate:औसत घंटे/दिन]",
+  "summary.efficiency": "[translate:दक्षता स्कोर]",
+  "summary.insight.title": "[translate:प्रदर्शन अंतर्दृष्टि]",
+  "summary.insight.body": "[translate:आपकी टीम औसत से 12% बेहतर प्रदर्शन कर रही है. शानदार काम!]",
+
+  "buttons.profile": "[translate:प्रोफाइल]",
+  "buttons.logout": "[translate:लॉगआउट]"
+}

@@ -1,0 +1,36 @@
+{
+  "menu.dashboard": "Dashboard",
+  "menu.shop_setup": "Shop Setup",
+  "menu.staff_mgmt": "Staff Mgmt",
+  "menu.shift_schedule": "Shift Schedule",
+  "menu.reports": "Reports / Payroll",
+
+  "welcome.title": "Workforce Analytics Dashboard",
+  "welcome.subtitle": "Real-time insights into your workforce performance",
+
+  "chart.daily_hours": "Daily Work Hours by Employee",
+  "chart.daily_hours_sub": "Hours worked on {day}/{month}",
+  "chart.role_dist": "Staff Distribution by Role",
+  "chart.role_dist_sub": "Total employees per role this week",
+  "chart.weekly_dev": "Weekly Hours Deviation Analysis",
+  "chart.weekly_dev_sub": "Daily deviation from target hours (Target: 10 hours)",
+
+  "alerts.title": "Alerts & Notifications",
+  "alerts.staffing.title": "Staffing Alert",
+  "alerts.staffing.body": "Only {count} employees assigned this week. Consider adding {more} more staff members.",
+  "alerts.overtime.title": "Overtime Alert",
+  "alerts.overtime.body": "{name} has worked {hours} hours this week, exceeding the 40-hour limit.",
+  "alerts.coverage.title": "Low Coverage",
+  "alerts.coverage.body": "Weekend coverage is below optimal. Schedule more staff for Sat-Sun.",
+
+  "summary.title": "Weekly Summary",
+  "summary.total_staff": "Total Staff",
+  "summary.hours_week": "Hours This Week",
+  "summary.avg_hours": "Average Hours/Day",
+  "summary.efficiency": "Efficiency Score",
+  "summary.insight.title": "Performance Insight",
+  "summary.insight.body": "Your team is performing 12% above average. Great job maintaining efficiency!",
+
+  "buttons.profile": "Profile",
+  "buttons.logout": "Logout"
+}

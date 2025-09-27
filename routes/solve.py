@@ -15,8 +15,10 @@
 import json
 import argparse
 import math
+import os
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from ortools.sat.python import cp_model
 
 # Optional Flask imports (kept lazy-safe for CLI usage)
@@ -26,6 +28,16 @@ except Exception:
     Blueprint = None
     request = None
     jsonify = None
+
+# Optional DB imports (used when running via Flask route)
+try:
+    from dotenv import load_dotenv
+    import psycopg
+    from psycopg.rows import dict_row
+except Exception:
+    load_dotenv = None
+    psycopg = None
+    dict_row = None
 
 ISO_WEEKDAYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]
 
@@ -770,47 +782,238 @@ def _normalize_to_single_day_payload(body: dict, day_label: str) -> Tuple[dict, 
 
     raise ValueError("Invalid payload. Provide {day,...,employees} or {week,...,employees} or a flattened {open,close,roles,employees} object.")
 
+# ---------- DB helpers for route mode ----------
+
+def _load_env():
+    if load_dotenv:
+        try:
+            load_dotenv()
+        except Exception:
+            pass
+
+def _get_dburl() -> Optional[str]:
+    return os.getenv("DBURL")
+
+def _conn():
+    dburl = _get_dburl()
+    if not dburl:
+        raise RuntimeError("DBURL missing in env")
+    if not psycopg:
+        raise RuntimeError("psycopg not available")
+    return psycopg.connect(dburl)
+
+def _weekday_to_iso(label: str) -> str:
+    s = (label or "").strip().lower()
+    if not s:
+        return "day"
+    # Accept short forms
+    mapping = {
+        "mon": "monday", "monday": "monday",
+        "tue": "tuesday", "tues": "tuesday", "tuesday": "tuesday",
+        "wed": "wednesday", "weds": "wednesday", "wednesday": "wednesday",
+        "thu": "thursday", "thur": "thursday", "thurs": "thursday", "thursday": "thursday",
+        "fri": "friday", "friday": "friday",
+        "sat": "saturday", "saturday": "saturday",
+        "sun": "sunday", "sunday": "sunday",
+    }
+    return mapping.get(s, s)
+
+def _normalize_availability_for_day(av_json: any, day_label: str) -> List[str]:
+    """Return list of "HH:MM-HH:MM" ranges for the requested day from heterogeneous JSON shapes."""
+    if not av_json:
+        return []
+
+    def norm_key(k: str) -> Optional[str]:
+        if not isinstance(k, str):
+            return None
+        k = k.strip().lower()
+        # Map 3-letter keys to long
+        map3 = {"mon": "monday", "tue": "tuesday", "tues": "tuesday", "wed": "wednesday", "weds": "wednesday", "thu": "thursday", "thur": "thursday", "thurs": "thursday", "fri": "friday", "sat": "saturday", "sun": "sunday"}
+        return map3.get(k, k)
+
+    wanted = _weekday_to_iso(day_label)
+    # If dict of days
+    if isinstance(av_json, dict):
+        # Normalize keys
+        norm = {}
+        for k, v in av_json.items():
+            nk = norm_key(k)
+            if nk:
+                norm[nk] = v
+        raw = norm.get(wanted)
+        if raw is None:
+            return []
+        # If already list of ranges
+        if isinstance(raw, list):
+            out: List[str] = []
+            for r in raw:
+                if isinstance(r, str):
+                    rs = r.strip()
+                    if rs:
+                        out.append(rs)
+                elif isinstance(r, (list, tuple)) and len(r) == 2:
+                    out.append(f"{str(r[0]).strip()}-{str(r[1]).strip()}")
+            return out
+        # If single dict with start/end
+        if isinstance(raw, dict):
+            s = str(raw.get("start") or "").strip()
+            e = str(raw.get("end") or "").strip()
+            if s and e:
+                return [f"{s}-{e}"]
+            return []
+        return []
+    # If list assumed to already be ranges for the day
+    if isinstance(av_json, list):
+        out: List[str] = []
+        for r in av_json:
+            if isinstance(r, str):
+                rs = r.strip()
+                if rs:
+                    out.append(rs)
+            elif isinstance(r, (list, tuple)) and len(r) == 2:
+                out.append(f"{str(r[0]).strip()}-{str(r[1]).strip()}")
+        return out
+    return []
+
+def _fetch_staff_for_shop(shop_id: int, day_label: str, role_names: List[str], date_iso: Optional[str]) -> List[dict]:
+    """Fetch staff rows and adapt to solver employees format. Optionally compute prev_hours if date is provided (YYYY-MM-DD)."""
+    _load_env()
+    sql = """
+        SELECT id, name, availability, max_hours_per_week
+        FROM staff
+        WHERE shop_id = %s
+        ORDER BY name;
+    """
+    staff_rows: List[dict] = []
+    with _conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(sql, (int(shop_id),))
+        staff_rows = cur.fetchall() or []
+
+        # Optionally compute previous hours for the same ISO week up to the given date (exclusive)
+        prev_by_id: Dict[int, float] = {}
+        if date_iso:
+            try:
+                day_dt = datetime.fromisoformat(date_iso)
+                if day_dt.tzinfo is None:
+                    day_dt = day_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                day_dt = None
+            if day_dt is not None:
+                # Week starts on Monday
+                weekday_idx = (day_dt.weekday())  # 0=Mon
+                week_start = (day_dt - timedelta(days=weekday_idx)).replace(hour=0, minute=0, second=0, microsecond=0)
+                # Sum all shifts from week_start to day_dt (exclusive)
+                ids = [r["id"] for r in staff_rows if r and "id" in r]
+                if ids:
+                    # Use ANY array param for IN
+                    cur.execute(
+                        """
+                        SELECT staff_id, SUM(EXTRACT(EPOCH FROM (shift_end - shift_start))/3600.0) AS hours
+                        FROM shifts
+                        WHERE staff_id = ANY(%s)
+                          AND shift_start >= %s
+                          AND shift_start < %s
+                        GROUP BY staff_id
+                        """,
+                        (ids, week_start, day_dt)
+                    )
+                    for row in cur.fetchall() or []:
+                        if row.get("staff_id") is not None:
+                            prev_by_id[int(row["staff_id"])] = float(row.get("hours") or 0.0)
+
+    # Build employees array for solver
+    employees: List[dict] = []
+    iso_day = _weekday_to_iso(day_label)
+    for r in staff_rows:
+        avail_raw = r.get("availability")
+        day_ranges = _normalize_availability_for_day(avail_raw, iso_day)
+        employees.append({
+            "id": int(r["id"]),
+            "name": r.get("name") or f"staff-{r['id']}",
+            # Eligible for all provided roles (adjust if you add a mapping later)
+            "roles": list(role_names),
+            "max_weekly_hours": int(r.get("max_hours_per_week") or 40),
+            "prev_hours": float(0.0 if not date_iso else (prev_by_id.get(int(r["id"])) or 0.0)),
+            # Provide a dict keyed by the actual day label so the solver picks it
+            "availability": {iso_day: day_ranges}
+        })
+    return employees
+
 # Create blueprint if Flask is available
 if Blueprint is not None:
-    solve_bp = Blueprint("schedule", __name__)
+    # Use unique blueprint name and prefix under /api
+    solve_bp = Blueprint("solve_bp", __name__, url_prefix="/api")
 
-    @solve_bp.route("/solve", methods=["POST"])
+    @solve_bp.post("/solve")
     def schedule_endpoint():
         """
-        POST JSON body:
-          - Single day: {"day": {...}, "employees":[...]}
-          - Or weekly: {"week": {"monday": {...}, ...}, "employees":[...]}, with ?day_label=monday
-          - Or flattened: {"open":"..","close":"..","roles":{...},"peaks":[...], "employees":[...]}
+        POST /api/solve
+        Minimal JSON body (single day; employees auto-fetched from DB):
+        {
+          "shop_id": 1,
+          "weekday": "monday",           # or "day_label": "mon"
+          "open": "09:00",
+          "close": "22:00",
+          "roles": {"cashier": 1, "helper": 2},
+          "peaks": [ {"start":"10:00","end":"12:00","extra":{"cashier":1}} ],  # optional
+          "date": "2025-09-27"           # optional; if provided, previous hours are computed
+        }
 
         Optional query/body:
-          - day_label: which day to pick from week (default: first ISO weekday found)
+          - day_label/weekday: which weekday to solve (e.g., monday)
           - time_limit: solver time limit seconds (default 10)
         """
-        if request.is_json:
-            body = request.get_json(silent=True)
-        else:
-            return jsonify({"error": "Content-Type must be application/json"}), 400
+        if not request.is_json:
+            return jsonify({"error": "Content-Type must be application/json"}), 415
 
-        if body is None:
-            return jsonify({"error": "Invalid or empty JSON body"}), 400
-
-        # Pull optional params from query or body
-        day_label = request.args.get("day_label", body.get("day_label", "day"))
+        body = request.get_json(silent=True) or {}
+        # Accept both weekday and day_label
+        weekday = request.args.get("weekday") or body.get("weekday") or request.args.get("day_label") or body.get("day_label")
+        open_t = body.get("open")
+        close_t = body.get("close")
+        roles = body.get("roles")
+        peaks = body.get("peaks") or []
+        shop_id = body.get("shop_id")
+        date_iso = body.get("date")  # optional; ISO like YYYY-MM-DD
         time_limit = request.args.get("time_limit", body.get("time_limit", 10))
 
-        # Normalize and solve
-        try:
-            single_day_payload, resolved_label = _normalize_to_single_day_payload(body, day_label)
-        except ValueError as ve:
-            return jsonify({"error": str(ve)}), 400
+        # Validate minimal payload
+        errors = []
+        if not isinstance(shop_id, int):
+            errors.append("shop_id must be int")
+        if not isinstance(open_t, str):
+            errors.append("open must be HH:MM string")
+        if not isinstance(close_t, str):
+            errors.append("close must be HH:MM string")
+        if not isinstance(roles, dict) or not roles:
+            errors.append("roles must be a non-empty object {role:int}")
+        if not isinstance(peaks, list) and peaks is not None:
+            errors.append("peaks must be a list")
+        if not isinstance(weekday, str) or not weekday.strip():
+            errors.append("weekday (or day_label) must be provided")
+        if errors:
+            return jsonify({"error": "validation_failed", "details": errors}), 400
+
+        iso_day = _weekday_to_iso(weekday)
+
+        # Assemble day config
+        day_cfg = {"open": open_t, "close": close_t, "roles": roles}
+        if peaks:
+            day_cfg["peaks"] = peaks
 
         try:
-            result = solve_single_day(single_day_payload, day_label=resolved_label, time_limit_s=int(time_limit))
+            # Build employees automatically from DB
+            employees = _fetch_staff_for_shop(int(shop_id), iso_day, list(roles.keys()), date_iso)
         except Exception as ex:
-            # Defensive: catch unexpected issues to avoid 500s without context
+            return jsonify({"error": "db_error", "detail": str(ex)}), 500
+
+        # Prepare payload for solver
+        single_day_payload = {"day": day_cfg, "employees": employees}
+        try:
+            result = solve_single_day(single_day_payload, day_label=iso_day, time_limit_s=int(time_limit))
+        except Exception as ex:
             return jsonify({"error": "Failed to compute schedule", "detail": str(ex)}), 500
 
-        # Always return full result
         return jsonify(result), 200
 else:
     schedule_bp = None  # Flask not installed; CLI usage still works.

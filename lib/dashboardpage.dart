@@ -24,145 +24,125 @@ class DashboardShell extends StatelessWidget {
     ];
 
     final currentPath = GoRouterState.of(context).uri.path;
-    final selectedIndex = _indexForLocation(currentPath, menu);
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        toolbarHeight: 12,
-      ),
-      body: Row(
+      backgroundColor: Colors.white,
+      body: Column(
         children: [
-          // Sidebar
-          Container(
-            width: 220,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xFF0F2231), Color(0xFF0B1A27)],
+          // Top navigation bar (replaces left sidebar)
+          SafeArea(
+            bottom: false,
+            child: Container(
+              height: 64,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF0F2231), Color(0xFF0B1A27)],
+                ),
               ),
-            ),
-            child: SafeArea(
-              child: Column(
+              child: Row(
                 children: [
-                  const SizedBox(height: 12),
-                  // Logo badge
+                  // Logo
                   Container(
-                    height: 56,
-                    width: 56,
+                    height: 40,
+                    width: 40,
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    padding: const EdgeInsets.all(8),
-                    child: Image.asset(
-                      'assets/app_logo.png',
-                      fit: BoxFit.contain,
-                    ),
+                    padding: const EdgeInsets.all(6),
+                    child: Image.asset('assets/app_logo.png', fit: BoxFit.contain),
                   ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: NavigationRailTheme(
-                      data: NavigationRailThemeData(
-                        backgroundColor: Colors.transparent,
-                        selectedIconTheme:
-                            const IconThemeData(color: Colors.white),
-                        unselectedIconTheme: IconThemeData(
-                          color: Colors.white.withValues(alpha: 0.85),
+                  const SizedBox(width: 12),
+                  // Horizontal menu
+                  for (final m in menu)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: TextButton.icon(
+                        onPressed: () => context.go(m.path),
+                        icon: Icon(
+                          m.icon,
+                          size: 18,
+                          color: currentPath.startsWith(m.path)
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.85),
                         ),
-                        selectedLabelTextStyle: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        unselectedLabelTextStyle: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.95),
-                        ),
-                        indicatorColor: Colors.white.withValues(alpha: 0.10),
-                      ),
-                      child: NavigationRail(
-                        extended: true,
-                        groupAlignment: -0.8,
-                        minExtendedWidth: 220,
-                        backgroundColor: Colors.transparent,
-                        destinations: [
-                          for (final m in menu)
-                            NavigationRailDestination(
-                              icon: Icon(m.icon),
-                              selectedIcon: Icon(m.icon),
-                              label: Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 6),
-                                child: Text(m.label),
-                              ),
-                            ),
-                        ],
-                        selectedIndex: selectedIndex,
-                        onDestinationSelected: (i) => context.go(menu[i].path),
-                      ),
-                    ),
-                  ),
-                  // Footer
-                  const Divider(
-                      color: Color.fromRGBO(255, 255, 255, 0.24), height: 1),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _SidebarLanguageChip(),
-                        const SizedBox(height: 10),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          height: 40,
-                          child: FilledButton.tonal(
-                            style: FilledButton.styleFrom(
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.10),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
-                            onPressed: () {
-                              AppState.of(context).signOut();
-                              context.go('/');
-                            },
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.logout, size: 18),
-                                SizedBox(width: 8),
-                                Text('Logout'),
-                              ],
-                            ),
+                        label: Text(
+                          m.label,
+                          style: TextStyle(
+                            color: currentPath.startsWith(m.path)
+                                ? Colors.white
+                                : Colors.white.withValues(alpha: 0.95),
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ],
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                        ),
+                      ),
+                    ),
+                  const Spacer(),
+                  // Language selector (reusing existing chip)
+                  SizedBox(width: 180, child: _SidebarLanguageChip()),
+                  const SizedBox(width: 8),
+                  // Logout
+                  SizedBox(
+                    height: 40,
+                    child: FilledButton.tonal(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white.withValues(alpha: 0.10),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        AppState.of(context).signOut();
+                        context.go('/');
+                      },
+                      child: const Row(
+                        children: [
+                          Icon(Icons.logout, size: 18),
+                          SizedBox(width: 8),
+                          Text('Logout'),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Chatbot button on the far right of the top bar
+                  FilledButton.icon(
+                    onPressed: () => context.go('/chatbot'),
+                    icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                    label: const Text('Chatbot'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF3B82F6),
+                      foregroundColor: Colors.white,
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(width: 12),
+
+          // Content area
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(0, 12, 12, 12),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               child: child,
             ),
           ),
         ],
       ),
     );
-  }
-
-  int _indexForLocation(
-      String location, List<({String label, IconData icon, String path})> menu) {
-    for (int i = 0; i < menu.length; i++) {
-      if (location.startsWith(menu[i].path)) return i;
-    }
-    return 0;
   }
 }
 
@@ -223,7 +203,6 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _refreshAllForDate(DateTime date) async {
-    // Fire all fetches; bar and line are date-dependent.
     await Future.wait([
       _fetchPieChart(),
       _fetchBarChart(date),
@@ -311,7 +290,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // Mappers (adjust keys if backend differs)
   Map<String, int> _mapPieResponse(dynamic json) {
-    // Expect: List<Map>{label, value}
     if (json is List) {
       final out = <String, int>{};
       for (final e in json) {
@@ -327,7 +305,6 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Map<String, double> _mapBarResponse(dynamic json) {
-    // Expect: List<Map>{name, hours}
     if (json is List) {
       final out = <String, double>{};
       for (final e in json) {
@@ -343,7 +320,6 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Map<String, double> _mapLineHours(dynamic json) {
-    // Expect: { weeklyHours: [ {day:'Mon', hours:8.0}, ... ] }
     final out = <String, double>{};
     final list = (json is Map) ? json['weeklyHours'] : null;
     if (list is List) {
@@ -357,7 +333,6 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Map<String, double> _mapLineDeviation(dynamic json) {
-    // Expect: { weeklyDeviation:[ {day:'Monday', deviation:2.0}, ...] }
     final out = <String, double>{};
     final list = (json is Map) ? json['weeklyDeviation'] : null;
     if (list is List) {
@@ -381,21 +356,30 @@ class _DashboardPageState extends State<DashboardPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            // Header: title at left, Chatbot button at right on the same line
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Workforce Analytics Dashboard',
-                      style: text.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey[800],
-                      ),
+                Text(
+                  'Workforce Analytics Dashboard',
+                  style: text.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[800],
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: () => context.go('/chatbot'),
+                  icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                  label: const Text('Chatbot'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF3B82F6),
+                    foregroundColor: Colors.white,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -516,7 +500,6 @@ class _DashboardPageState extends State<DashboardPage> {
                   date: selectedDate,
                   onTap: () async {
                     await _selectDate(context);
-                    // Refresh dependent series after date change
                     _fetchBarChart(selectedDate);
                     _fetchLineChart(selectedDate);
                   },
@@ -538,7 +521,6 @@ class _DashboardPageState extends State<DashboardPage> {
             child: Stack(
               children: [
                 Positioned.fill(child: chart),
-                // Optional tiny loading overlays (non-intrusive)
                 if (_loadingPie && title.contains('Distribution'))
                   const _MiniLoader(),
                 if (_loadingBar && title.contains('Daily Work Hours'))
@@ -559,7 +541,10 @@ class _DashboardPageState extends State<DashboardPage> {
     return BarChart(
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
-        maxY: (entries.map((e) => e.value).fold<double>(0, (p, c) => c > p ? c : p) + 2)
+        maxY: (entries
+                    .map((e) => e.value)
+                    .fold<double>(0, (p, c) => c > p ? c : p) +
+                2)
             .clamp(6, 16)
             .toDouble(),
         barTouchData: BarTouchData(
@@ -571,8 +556,7 @@ class _DashboardPageState extends State<DashboardPage> {
               final employee = entries[idx].key;
               return BarTooltipItem(
                 '$employee\n',
-                const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold),
+                const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                 children: <TextSpan>[
                   TextSpan(
                     text: '${rod.toY.toStringAsFixed(1)} hours',
@@ -593,8 +577,8 @@ class _DashboardPageState extends State<DashboardPage> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       entries[value.toInt()].key,
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w500),
+                      style:
+                          const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
                     ),
                   );
                 }
@@ -614,10 +598,8 @@ class _DashboardPageState extends State<DashboardPage> {
               reservedSize: 30,
             ),
           ),
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         borderData: FlBorderData(show: false),
         gridData: FlGridData(
@@ -675,16 +657,14 @@ class _DashboardPageState extends State<DashboardPage> {
               aspectRatio: 1,
               child: PieChart(
                 PieChartData(
-                  pieTouchData:
-                      PieTouchData(touchCallback: (event, response) {}),
+                  pieTouchData: PieTouchData(touchCallback: (event, response) {}),
                   borderData: FlBorderData(show: false),
                   sectionsSpace: 4,
                   centerSpaceRadius: 40,
                   sections: entries.asMap().entries.map((e) {
                     final index = e.key;
                     final count = e.value.value;
-                    final percentage =
-                        total == 0 ? 0.0 : (count / total) * 100;
+                    final percentage = total == 0 ? 0.0 : (count / total) * 100;
                     return PieChartSectionData(
                       color: colors[index % colors.length],
                       value: count.toDouble(),
@@ -759,7 +739,9 @@ class _DashboardPageState extends State<DashboardPage> {
                     child: Text(
                       day.substring(0, 3),
                       style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w500),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   );
                 }
@@ -779,10 +761,8 @@ class _DashboardPageState extends State<DashboardPage> {
               reservedSize: 30,
             ),
           ),
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         borderData: FlBorderData(show: false),
         gridData: FlGridData(
@@ -790,9 +770,7 @@ class _DashboardPageState extends State<DashboardPage> {
           horizontalInterval: 1,
           getDrawingHorizontalLine: (value) {
             return FlLine(
-              color: value == 0
-                  ? const Color(0x42000000)
-                  : Colors.grey[200]!,
+              color: value == 0 ? const Color(0x42000000) : Colors.grey[200]!,
               strokeWidth: value == 0 ? 2 : 1,
             );
           },
@@ -814,12 +792,10 @@ class _DashboardPageState extends State<DashboardPage> {
                         : const Color(0xFF4ECDC4),
                     width: 28,
                     borderRadius: BorderRadius.vertical(
-                      top: deviation >= 0
-                          ? const Radius.circular(4)
-                          : Radius.zero,
-                      bottom: deviation < 0
-                          ? const Radius.circular(4)
-                          : Radius.zero,
+                      top:
+                          deviation >= 0 ? const Radius.circular(4) : Radius.zero,
+                      bottom:
+                          deviation < 0 ? const Radius.circular(4) : Radius.zero,
                     ),
                   ),
                 ],
@@ -870,8 +846,7 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
         titlesData: FlTitlesData(
           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
@@ -1082,12 +1057,12 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
           const SizedBox(height: 16),
           _buildSummaryItem('Total Staff', '33', Icons.people, Colors.blue),
-          _buildSummaryItem('Hours This Week', '1,245', Icons.schedule,
-              const Color(0xFF2E7D32)),
+          _buildSummaryItem(
+              'Hours This Week', '1,245', Icons.schedule, const Color(0xFF2E7D32)),
           _buildSummaryItem(
               'Average Hours/Day', '8.2', Icons.trending_up, Colors.orange),
-          _buildSummaryItem('Efficiency Score', '87%', Icons.star,
-              const Color(0xFF7B1FA2)),
+          _buildSummaryItem(
+              'Efficiency Score', '87%', Icons.star, const Color(0xFF7B1FA2)),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(12),
@@ -1179,50 +1154,6 @@ class _DashboardPageState extends State<DashboardPage> {
         selectedDate = picked;
       });
     }
-  }
-}
-
-class _SidebarLanguageChip extends StatefulWidget {
-  @override
-  State<_SidebarLanguageChip> createState() => _SidebarLanguageChipState();
-}
-
-class _SidebarLanguageChipState extends State<_SidebarLanguageChip> {
-  String value = 'English';
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color.fromRGBO(255, 255, 255, 0.24),
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          dropdownColor: const Color(0xFF0F2231),
-          value: value,
-          items: const [
-            DropdownMenuItem(
-                value: 'English',
-                child: Text('English', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(
-                value: 'Hindi',
-                child: Text('Hindi', style: TextStyle(color: Colors.white))),
-            DropdownMenuItem(
-                value: 'Marathi',
-                child: Text('Marathi', style: TextStyle(color: Colors.white))),
-          ],
-          onChanged: (v) => setState(() => value = v!),
-          icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
-          style: const TextStyle(color: Colors.white),
-        ),
-      ),
-    );
   }
 }
 
@@ -1322,6 +1253,51 @@ class _LegendItem extends StatelessWidget {
           style: TextStyle(fontSize: 12, color: Colors.grey[600]),
         ),
       ],
+    );
+  }
+}
+
+// Language selector reused in top bar.
+class _SidebarLanguageChip extends StatefulWidget {
+  @override
+  State<_SidebarLanguageChip> createState() => _SidebarLanguageChipState();
+}
+
+class _SidebarLanguageChipState extends State<_SidebarLanguageChip> {
+  String value = 'English';
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color.fromRGBO(255, 255, 255, 0.24),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          dropdownColor: const Color(0xFF0F2231),
+          value: value,
+          items: const [
+            DropdownMenuItem(
+                value: 'English',
+                child: Text('English', style: TextStyle(color: Colors.white))),
+            DropdownMenuItem(
+                value: 'Hindi',
+                child: Text('Hindi', style: TextStyle(color: Colors.white))),
+            DropdownMenuItem(
+                value: 'Marathi',
+                child: Text('Marathi', style: TextStyle(color: Colors.white))),
+          ],
+          onChanged: (v) => setState(() => value = v!),
+          icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+          style: const TextStyle(color: Colors.white),
+        ),
+      ),
     );
   }
 }

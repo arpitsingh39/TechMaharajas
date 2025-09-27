@@ -1,4 +1,3 @@
-// lib/staff/staff management.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -30,7 +29,7 @@ class StaffManagementPage extends StatefulWidget {
 
 class _StaffManagementPageState extends State<StaffManagementPage> {
   // API config
-  static const String _base = 'https://studious-space-cod-7qjp49qj756fg74-5000.app.github.dev';
+  static const String _base = 'https://techmaharajas.onrender.com';
   static const String _staffViewPath = '/api/staff/view';
   static const String _staffCreatePath = '/api/staff/create';
 

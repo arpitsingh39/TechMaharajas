@@ -212,7 +212,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // BASE URL
   static const String _base =
-      'https://studious-space-cod-7qjp49qj756fg74-5000.app.github.dev';
+      'https://techmaharajas.onrender.com';
 
   // GET /api/piechart -> [{label, value}]
   Future<void> _fetchPieChart() async {

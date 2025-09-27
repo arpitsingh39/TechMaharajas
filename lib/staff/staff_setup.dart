@@ -27,7 +27,7 @@ class StaffSetupPage extends StatefulWidget {
 
 class _StaffSetupPageState extends State<StaffSetupPage> {
   // API base and paths
-  static const String _base = 'https://studious-space-cod-7qjp49qj756fg74-5000.app.github.dev';
+  static const String _base = 'https://techmaharajas.onrender.com';
   static const String _roleInfoPath = '/api/roleinfo';
   static const String _addRolePath = '/api/addrole';
 

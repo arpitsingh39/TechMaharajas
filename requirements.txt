@@ -3,3 +3,7 @@ gunicorn==21.2.0
 psycopg2-binary==2.9.10
 python-dotenv==1.0.1
 flask-cors==5.0.0
+groq
+ortools>=9.8.0,<10.0.0
+requests>=2.31.0,<3.0.0
+psycopg[binary]>=3.1.8,<4.0.0

@@ -7,7 +7,6 @@ from psycopg2.extras import RealDictCursor
 import psycopg2
 from dotenv import load_dotenv
 
-# Load DBURL only from .env
 load_dotenv()
 DBURL = os.getenv("DBURL")
 
@@ -19,31 +18,17 @@ def _get_conn():
     return psycopg2.connect(DBURL)
 
 def parse_input_date(date_str: str) -> datetime:
-    """
-    Accepts formats like:
-      - 12/9/25  (DD/MM/YY)
-      - 12-9-25
-      - 2025-09-12 (YYYY-MM-DD)
-    Returns an aware UTC midnight for that calendar date.
-    """
-    # Try DD/MM/YY and DD/M/YY with slash
     fmts = ["%d/%m/%y", "%d-%m-%y", "%Y-%m-%d"]
-    last_err = None
     for f in fmts:
         try:
             dt = datetime.strptime(date_str.strip(), f)
             return dt.replace(tzinfo=timezone.utc)
-        except Exception as e:
-            last_err = e
-    raise ValueError(str(last_err) if last_err else "Invalid date")
+        except Exception:
+            pass
+    raise ValueError("unsupported date format")
 
 def week_window(dt_utc_midnight: datetime) -> tuple[datetime, datetime]:
-    """
-    Given a UTC midnight datetime, compute Monday 00:00:00 (inclusive)
-    to next Monday 00:00:00 (exclusive) for the containing ISO week.
-    """
-    # weekday(): Monday=0 ... Sunday=6
-    delta_days = dt_utc_midnight.weekday()  # days since Monday
+    delta_days = dt_utc_midnight.weekday()
     week_start = (dt_utc_midnight - timedelta(days=delta_days)).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -52,32 +37,24 @@ def week_window(dt_utc_midnight: datetime) -> tuple[datetime, datetime]:
 
 @linechart_bp.get("/linechart")
 def linechart():
-    """
-    GET /api/linechart?date=12/9/25
-    Returns a 7-day window (Mon..Sun) containing the given date with:
-      - date (YYYY-MM-DD)
-      - employees_worked (distinct staff who had any overlapping shift that day)
-      - total_hours (sum of hours from overlapping segments)
-    """
     raw_date = request.args.get("date", type=str)
-    if not raw_date:
-        return jsonify({"error": "date is required, e.g., 12/9/25 or 2025-09-12"}), 400
+    shop_id = request.args.get("shop_id", type=int)
+    if not raw_date or shop_id is None:
+        return jsonify({"error": "date (DD/MM/YY or YYYY-MM-DD) and shop_id (int) are required"}), 400
 
     try:
-        day = parse_input_date(raw_date)  # UTC midnight for provided date
+        day = parse_input_date(raw_date)
     except Exception:
-        return jsonify({"error": "unsupported date format. Try 12/9/25 (DD/MM/YY) or 2025-09-12"}), 400
+        return jsonify({"error": "unsupported date format. Try 12/9/25 or 2025-09-12"}), 400
 
     wk_start, wk_end = week_window(day)
 
-    # Build day bins by truncating to day and clipping shift intervals to each day.
-    # We count distinct staff per day and sum hours per day.
     sql = """
         WITH params AS (
             SELECT %(wk_start)s::timestamptz AS wk_start,
-                   %(wk_end)s::timestamptz   AS wk_end
+                   %(wk_end)s::timestamptz   AS wk_end,
+                   %(shop_id)s::int          AS shop_id
         ),
-        -- all shifts overlapping the 7-day window with staff info
         overlapping AS (
             SELECT s.id AS shift_id,
                    st.id AS staff_id,
@@ -86,10 +63,10 @@ def linechart():
             FROM shifts s
             JOIN staff st ON st.id = s.staff_id
             CROSS JOIN params p
-            WHERE s.shift_end   > p.wk_start
+            WHERE st.shop_id = p.shop_id
+              AND s.shift_end   > p.wk_start
               AND s.shift_start < p.wk_end
         ),
-        -- clip each overlapping shift to the window first
         clipped AS (
             SELECT staff_id,
                    GREATEST(shift_start, p.wk_start) AS clip_start,
@@ -98,15 +75,12 @@ def linechart():
             CROSS JOIN params p
             WHERE LEAST(shift_end, p.wk_end) > GREATEST(shift_start, p.wk_start)
         ),
-        -- break clipped intervals into day buckets (start-of-day timestamps)
         per_day AS (
             SELECT date_trunc('day', clip_start) AS day_start,
                    staff_id,
-                   clip_start,
-                   clip_end
+                   clip_start, clip_end
             FROM clipped
         ),
-        -- for each row, clip again to its day boundaries to avoid crossing midnight
         day_clipped AS (
             SELECT staff_id,
                    day_start,
@@ -115,9 +89,7 @@ def linechart():
             FROM per_day
         ),
         valid AS (
-            SELECT staff_id,
-                   day_start,
-                   ds, de
+            SELECT staff_id, day_start, ds, de
             FROM day_clipped
             WHERE de > ds
         )
@@ -130,7 +102,7 @@ def linechart():
         ORDER BY day;
     """
 
-    params = {"wk_start": wk_start, "wk_end": wk_end}
+    params = {"wk_start": wk_start, "wk_end": wk_end, "shop_id": shop_id}
 
     try:
         with _get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -139,18 +111,13 @@ def linechart():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    # Ensure all 7 days present even if zero activity
     day_list = [(wk_start + timedelta(days=i)).date().isoformat() for i in range(7)]
     by_day = {r["day"]: r for r in rows}
-    data = []
-    for d in day_list:
-        r = by_day.get(d)
-        if r is None:
-            data.append({"day": d, "employees_worked": 0, "total_hours": 0.0})
-        else:
-            data.append(r)
+    data = [{"day": d, "employees_worked": by_day.get(d, {}).get("employees_worked", 0),
+             "total_hours": by_day.get(d, {}).get("total_hours", 0.0)} for d in day_list]
 
     return jsonify({
+        "shop_id": shop_id,
         "window_start": wk_start.date().isoformat(),
         "window_end_exclusive": wk_end.date().isoformat(),
         "data": data

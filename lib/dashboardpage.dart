@@ -1,7 +1,12 @@
-// lib/Dashboard page.dart — Enhanced with comprehensive analytics dashboard (fixed)
+// lib/Dashboard page.dart — Dashboard with inline date picker in Daily Hours card,
+// centered PieChart with bottom legend, extra spacing, and a Weekly Hours Trend line chart
+// wired to backend APIs for pie, bar, and line data without changing UI/logic.
+
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:http/http.dart' as http;
 import 'main.dart';
 
 class DashboardShell extends StatelessWidget {
@@ -53,7 +58,7 @@ class DashboardShell extends StatelessWidget {
                     ),
                     padding: const EdgeInsets.all(8),
                     child: Image.asset(
-                      'assets/app_logo.png', // matches pubspec
+                      'assets/app_logo.png',
                       fit: BoxFit.contain,
                     ),
                   ),
@@ -98,29 +103,26 @@ class DashboardShell extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Replace the old Row footer (Padding with Row) with this Column footer
-                  const Divider(color: Color.fromRGBO(255, 255, 255, 0.24), height: 1),
+                  // Footer
+                  const Divider(
+                      color: Color.fromRGBO(255, 255, 255, 0.24), height: 1),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Language selector full-width
                         _SidebarLanguageChip(),
                         const SizedBox(height: 10),
-
-                        // Profile button full-width and upright
-                        
                         const SizedBox(height: 10),
-
-                        // Logout button full-width and upright
                         SizedBox(
                           height: 40,
                           child: FilledButton.tonal(
                             style: FilledButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(alpha: 0.10),
+                              backgroundColor:
+                                  Colors.white.withValues(alpha: 0.10),
                               foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
                             ),
                             onPressed: () {
                               AppState.of(context).signOut();
@@ -139,7 +141,6 @@ class DashboardShell extends StatelessWidget {
                       ],
                     ),
                   ),
-
                 ],
               ),
             ),
@@ -175,8 +176,8 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   DateTime selectedDate = DateTime.now();
 
-  // Sample data for demonstrations
-  final Map<String, double> dailyHours = {
+  // State fed from APIs (initialized with the same demo values as before).
+  Map<String, double> dailyHours = {
     'Alice': 8.5,
     'Bob': 7.0,
     'Charlie': 9.5,
@@ -184,7 +185,7 @@ class _DashboardPageState extends State<DashboardPage> {
     'Ethan': 8.0,
   };
 
-  final Map<String, int> roleDistribution = {
+  Map<String, int> roleDistribution = {
     'Cashier': 10,
     'Cleaner': 5,
     'Chef': 7,
@@ -192,7 +193,7 @@ class _DashboardPageState extends State<DashboardPage> {
     'Manager': 3,
   };
 
-  final Map<String, double> weeklyDeviations = {
+  Map<String, double> weeklyDeviations = {
     'Monday': 2.0,
     'Tuesday': -1.0,
     'Wednesday': 0.0,
@@ -200,6 +201,174 @@ class _DashboardPageState extends State<DashboardPage> {
     'Friday': -2.0,
     'Saturday': 1.0,
   };
+
+  Map<String, double> weeklyHours = {
+    'Mon': 8.0,
+    'Tue': 6.5,
+    'Wed': 9.0,
+    'Thu': 7.0,
+    'Fri': 8.5,
+    'Sat': 5.0,
+    'Sun': 0.0,
+  };
+
+  bool _loadingPie = false;
+  bool _loadingBar = false;
+  bool _loadingLine = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshAllForDate(selectedDate);
+  }
+
+  Future<void> _refreshAllForDate(DateTime date) async {
+    // Fire all fetches; bar and line are date-dependent.
+    await Future.wait([
+      _fetchPieChart(),
+      _fetchBarChart(date),
+      _fetchLineChart(date),
+    ]);
+  }
+
+  // BASE URL
+  static const String _base =
+      'https://studious-space-cod-7qjp49qj756fg74-5000.app.github.dev';
+
+  // GET /api/piechart -> [{label, value}]
+  Future<void> _fetchPieChart() async {
+    if (_loadingPie) return;
+    setState(() => _loadingPie = true);
+    try {
+      final uri = Uri.parse('$_base/api/piechart');
+      final res = await http.get(uri);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final mapped = _mapPieResponse(data);
+        if (mapped.isNotEmpty) {
+          setState(() => roleDistribution = mapped);
+        }
+      }
+    } catch (_) {
+      // keep last known values
+    } finally {
+      if (mounted) setState(() => _loadingPie = false);
+    }
+  }
+
+  // GET /api/barchart?date=YYYY-MM-DD -> [{name, hours}]
+  Future<void> _fetchBarChart(DateTime date) async {
+    if (_loadingBar) return;
+    setState(() => _loadingBar = true);
+    try {
+      final d = '${date.year.toString().padLeft(4, '0')}-'
+          '${date.month.toString().padLeft(2, '0')}-'
+          '${date.day.toString().padLeft(2, '0')}';
+      final uri = Uri.parse('$_base/api/barchart?date=$d');
+      final res = await http.get(uri);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final mapped = _mapBarResponse(data);
+        if (mapped.isNotEmpty) {
+          setState(() => dailyHours = mapped);
+        }
+      }
+    } catch (_) {
+      // keep last known values
+    } finally {
+      if (mounted) setState(() => _loadingBar = false);
+    }
+  }
+
+  // GET /api/linechart?weekOf=YYYY-MM-DD -> {
+  //   weeklyHours:[{day:'Mon',hours:8.0},...],
+  //   weeklyDeviation:[{day:'Monday',deviation:2.0},...]
+  // }
+  Future<void> _fetchLineChart(DateTime date) async {
+    if (_loadingLine) return;
+    setState(() => _loadingLine = true);
+    try {
+      final d = '${date.year.toString().padLeft(4, '0')}-'
+          '${date.month.toString().padLeft(2, '0')}-'
+          '${date.day.toString().padLeft(2, '0')}';
+      final uri = Uri.parse('$_base/api/linechart?weekOf=$d');
+      final res = await http.get(uri);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final mappedHours = _mapLineHours(data);
+        final mappedDev = _mapLineDeviation(data);
+        setState(() {
+          if (mappedHours.isNotEmpty) weeklyHours = mappedHours;
+          if (mappedDev.isNotEmpty) weeklyDeviations = mappedDev;
+        });
+      }
+    } catch (_) {
+      // keep last known values
+    } finally {
+      if (mounted) setState(() => _loadingLine = false);
+    }
+  }
+
+  // Mappers (adjust keys if backend differs)
+  Map<String, int> _mapPieResponse(dynamic json) {
+    // Expect: List<Map>{label, value}
+    if (json is List) {
+      final out = <String, int>{};
+      for (final e in json) {
+        final label = e['label']?.toString();
+        final v = e['value'];
+        if (label != null && v is num) {
+          out[label] = v.toInt();
+        }
+      }
+      return out;
+    }
+    return {};
+  }
+
+  Map<String, double> _mapBarResponse(dynamic json) {
+    // Expect: List<Map>{name, hours}
+    if (json is List) {
+      final out = <String, double>{};
+      for (final e in json) {
+        final name = e['name']?.toString();
+        final v = e['hours'];
+        if (name != null && v is num) {
+          out[name] = v.toDouble();
+        }
+      }
+      return out;
+    }
+    return {};
+  }
+
+  Map<String, double> _mapLineHours(dynamic json) {
+    // Expect: { weeklyHours: [ {day:'Mon', hours:8.0}, ... ] }
+    final out = <String, double>{};
+    final list = (json is Map) ? json['weeklyHours'] : null;
+    if (list is List) {
+      for (final e in list) {
+        final day = e['day']?.toString(); // Mon..Sun
+        final v = e['hours'];
+        if (day != null && v is num) out[day] = v.toDouble();
+      }
+    }
+    return out;
+  }
+
+  Map<String, double> _mapLineDeviation(dynamic json) {
+    // Expect: { weeklyDeviation:[ {day:'Monday', deviation:2.0}, ...] }
+    final out = <String, double>{};
+    final list = (json is Map) ? json['weeklyDeviation'] : null;
+    if (list is List) {
+      for (final e in list) {
+        final day = e['day']?.toString(); // Monday..Sunday
+        final v = e['deviation'];
+        if (day != null && v is num) out[day] = v.toDouble();
+      }
+    }
+    return out;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -226,93 +395,76 @@ class _DashboardPageState extends State<DashboardPage> {
                         color: Colors.grey[800],
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Real-time insights into your workforce performance',
-                      style: text.bodyMedium?.copyWith(color: Colors.grey[600]),
-                    ),
                   ],
-                ),
-                // Date Picker
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.calendar_today,
-                          size: 16, color: Colors.grey[600]),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: () => _selectDate(context),
-                        child: Text(
-                          '${selectedDate.day}/${selectedDate.month}/${selectedDate.year}',
-                          style: text.bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
               ],
             ),
             const SizedBox(height: 30),
 
-            // Top Row: Daily Hours Chart + Role Distribution
+            // Top Row: Daily Hours + Role Distribution
             Row(
               children: [
-                // Daily Hours Bar Chart
+                // Daily Hours with inline date picker
                 Expanded(
                   flex: 2,
                   child: _buildChartCard(
-                    'Daily Work Hours by Employee',
-                    'Hours worked on ${selectedDate.day}/${selectedDate.month}',
-                    _buildDailyHoursChart(),
+                    title: 'Daily Work Hours by Employee',
+                    subtitle:
+                        'Hours worked on ${selectedDate.day}/${selectedDate.month}',
+                    chart: _buildDailyHoursChart(),
+                    showInlineDatePicker: true,
                     height: 300,
                   ),
                 ),
                 const SizedBox(width: 20),
-                // Role Distribution Pie Chart
+                // Role Distribution
                 Expanded(
                   flex: 1,
                   child: _buildChartCard(
-                    'Staff Distribution by Role',
-                    'Total employees per role this week',
-                    _buildRoleDistributionChart(),
+                    title: 'Staff Distribution by Role',
+                    subtitle: '',
+                    chart: _buildRoleDistributionCentered(),
                     height: 300,
+                    hideChartSubtitle: true,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 20),
 
-            // Weekly Deviation Chart
-            _buildChartCard(
-              'Weekly Hours Deviation Analysis',
-              'Daily deviation from target hours (Target: 10 hours)',
-              _buildWeeklyDeviationChart(),
-              height: 250,
+            // Weekly Deviation (left) + Weekly Hours Line (right)
+            Row(
+              children: [
+                Expanded(
+                  flex: 1,
+                  child: _buildChartCard(
+                    title: 'Weekly Hours Deviation Analysis',
+                    subtitle: 'Daily deviation from target hours (Target: 10 hours)',
+                    chart: _buildWeeklyDeviationChart(),
+                    height: 280,
+                  ),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  flex: 1,
+                  child: _buildChartCard(
+                    title: 'Weekly Hours Trend',
+                    subtitle: 'Hours per day for the selected week',
+                    chart: _buildWeeklyHoursLineChart(),
+                    height: 280,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 30),
 
-            // Bottom Section: Alerts & Summary
+            // Bottom: Alerts & Summary
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Alerts Section
-                Expanded(
-                  child: _buildAlertSection(),
-                ),
+                Expanded(child: _buildAlertSection()),
                 const SizedBox(width: 20),
-                // Summary Section
-                Expanded(
-                  child: _buildSummarySection(),
-                ),
+                Expanded(child: _buildSummarySection()),
               ],
             ),
           ],
@@ -321,8 +473,14 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildChartCard(String title, String subtitle, Widget chart,
-      {double? height}) {
+  Widget _buildChartCard({
+    required String title,
+    required String subtitle,
+    required Widget chart,
+    double? height,
+    bool showInlineDatePicker = false,
+    bool hideChartSubtitle = false,
+  }) {
     return Container(
       height: height,
       padding: const EdgeInsets.all(20),
@@ -340,40 +498,77 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2D3748),
-            ),
+          // Header row with title and optional date picker
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2D3748),
+                  ),
+                ),
+              ),
+              if (showInlineDatePicker)
+                _InlineDateButton(
+                  date: selectedDate,
+                  onTap: () async {
+                    await _selectDate(context);
+                    // Refresh dependent series after date change
+                    _fetchBarChart(selectedDate);
+                    _fetchLineChart(selectedDate);
+                  },
+                ),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
+          if (!hideChartSubtitle) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
             ),
-          ),
+          ],
           const SizedBox(height: 20),
-          Expanded(child: chart),
+          Expanded(
+            child: Stack(
+              children: [
+                Positioned.fill(child: chart),
+                // Optional tiny loading overlays (non-intrusive)
+                if (_loadingPie && title.contains('Distribution'))
+                  const _MiniLoader(),
+                if (_loadingBar && title.contains('Daily Work Hours'))
+                  const _MiniLoader(),
+                if (_loadingLine &&
+                    (title.contains('Trend') || title.contains('Deviation')))
+                  const _MiniLoader(),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildDailyHoursChart() {
-    final entries = dailyHours.entries.toList(); // for asMap()
+    final entries = dailyHours.entries.toList();
     return BarChart(
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
-        maxY: 12,
+        maxY: (entries.map((e) => e.value).fold<double>(0, (p, c) => c > p ? c : p) + 2)
+            .clamp(6, 16)
+            .toDouble(),
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
             getTooltipColor: (_) => const Color(0xFF3B82F6),
             getTooltipItem: (group, groupIndex, rod, rodIndex) {
-              final employee = entries[group.x.toInt()].key;
+              final idx = group.x.toInt();
+              if (idx < 0 || idx >= entries.length) return null;
+              final employee = entries[idx].key;
               return BarTooltipItem(
                 '$employee\n',
                 const TextStyle(
@@ -381,8 +576,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 children: <TextSpan>[
                   TextSpan(
                     text: '${rod.toY.toStringAsFixed(1)} hours',
-                    style:
-                        const TextStyle(color: Colors.white, fontSize: 16),
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
                   ),
                 ],
               );
@@ -460,7 +654,8 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildRoleDistributionChart() {
+  // Centered pie chart with legend at the bottom
+  Widget _buildRoleDistributionCentered() {
     final colors = [
       const Color(0xFF4CAF50),
       const Color(0xFF2196F3),
@@ -468,63 +663,80 @@ class _DashboardPageState extends State<DashboardPage> {
       const Color(0xFFE91E63),
       const Color(0xFF9C27B0),
     ];
-    final entries = roleDistribution.entries.toList(); // for asMap()
+    final entries = roleDistribution.entries.toList();
     final total = roleDistribution.values.fold<int>(0, (a, b) => a + b);
 
-    return PieChart(
-      PieChartData(
-        pieTouchData: PieTouchData(
-          touchCallback: (event, response) {},
+    return Column(
+      children: [
+        const SizedBox(height: 16),
+        Expanded(
+          child: Center(
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: PieChart(
+                PieChartData(
+                  pieTouchData:
+                      PieTouchData(touchCallback: (event, response) {}),
+                  borderData: FlBorderData(show: false),
+                  sectionsSpace: 4,
+                  centerSpaceRadius: 40,
+                  sections: entries.asMap().entries.map((e) {
+                    final index = e.key;
+                    final count = e.value.value;
+                    final percentage =
+                        total == 0 ? 0.0 : (count / total) * 100;
+                    return PieChartSectionData(
+                      color: colors[index % colors.length],
+                      value: count.toDouble(),
+                      title: '${percentage.toStringAsFixed(1)}%',
+                      radius: 60,
+                      titleStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ),
         ),
-        borderData: FlBorderData(show: false),
-        sectionsSpace: 4,
-        centerSpaceRadius: 40,
-        sections: entries
-            .asMap()
-            .entries
-            .map((e) {
-              final index = e.key;
-              final role = e.value.key;
-              final count = e.value.value;
-              final percentage = (count / total) * 100;
-              return PieChartSectionData(
-                color: colors[index % colors.length],
-                value: count.toDouble(),
-                title: '${percentage.toStringAsFixed(1)}%',
-                radius: 60,
-                titleStyle: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+        const SizedBox(height: 18),
+        Align(
+          alignment: Alignment.center,
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              for (final e in entries.asMap().entries)
+                _LegendItem(
+                  color: colors[e.key % colors.length],
+                  label: e.value.key,
+                  valueText: e.value.value.toString(),
                 ),
-                badgeWidget: Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Text(
-                    role,
-                    style: const TextStyle(
-                        fontSize: 9, color: Colors.white),
-                  ),
-                ),
-                badgePositionPercentageOffset: 1.25,
-              );
-            })
-            .toList(),
-      ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildWeeklyDeviationChart() {
-    final entries = weeklyDeviations.entries.toList(); // for asMap()
+    final entries = weeklyDeviations.entries.toList();
     return BarChart(
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
-        maxY: 4,
-        minY: -3,
+        maxY: 6,
+        minY: -4,
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(
             getTooltipColor: (_) => Colors.black87,
             getTooltipItem: (group, groupIndex, rod, rodIndex) {
-              final day = entries[group.x.toInt()].key;
+              final i = group.x.toInt();
+              if (i < 0 || i >= entries.length) return null;
+              final day = entries[i].key;
               final deviation = rod.toY;
               final prefix = deviation > 0 ? '+' : '';
               return BarTooltipItem(
@@ -539,8 +751,9 @@ class _DashboardPageState extends State<DashboardPage> {
             sideTitles: SideTitles(
               showTitles: true,
               getTitlesWidget: (value, meta) {
-                if (value.toInt() < entries.length) {
-                  final day = entries[value.toInt()].key;
+                final i = value.toInt();
+                if (i >= 0 && i < entries.length) {
+                  final day = entries[i].key;
                   return Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
@@ -577,7 +790,9 @@ class _DashboardPageState extends State<DashboardPage> {
           horizontalInterval: 1,
           getDrawingHorizontalLine: (value) {
             return FlLine(
-              color: value == 0 ? const Color(0x42000000) : Colors.grey[200]!,
+              color: value == 0
+                  ? const Color(0x42000000)
+                  : Colors.grey[200]!,
               strokeWidth: value == 0 ? 2 : 1,
             );
           },
@@ -611,6 +826,125 @@ class _DashboardPageState extends State<DashboardPage> {
               );
             })
             .toList(),
+      ),
+    );
+  }
+
+  // Weekly hours line chart (X: weekday only, Y: hours)
+  Widget _buildWeeklyHoursLineChart() {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    final List<FlSpot> spots = List<FlSpot>.generate(
+      7,
+      (i) => FlSpot(i.toDouble(), weeklyHours[days[i]] ?? 0.0),
+    );
+
+    double peak = 0;
+    for (final v in weeklyHours.values) {
+      if (v > peak) peak = v;
+    }
+    final double maxY = (peak + 2).clamp(6, 16).toDouble();
+
+    String weekdayLabel(double x) {
+      final idx = x.round();
+      if (idx < 0 || idx >= days.length) return '';
+      return days[idx];
+    }
+
+    return LineChart(
+      LineChartData(
+        minX: 0,
+        maxX: 6,
+        minY: 0,
+        maxY: maxY,
+        gridData: FlGridData(
+          show: true,
+          horizontalInterval: 2,
+          getDrawingHorizontalLine: (value) =>
+              FlLine(color: Colors.grey[200]!, strokeWidth: 1),
+          drawVerticalLine: false,
+        ),
+        borderData: FlBorderData(
+          show: true,
+          border: Border.all(color: Colors.grey[300]!, width: 1),
+        ),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 28,
+              getTitlesWidget: (value, meta) {
+                final label = weekdayLabel(value);
+                if (label.isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF4A5568),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 30,
+              interval: 2,
+              getTitlesWidget: (value, meta) =>
+                  Text('${value.toInt()}h', style: const TextStyle(fontSize: 10)),
+            ),
+          ),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: const Color(0xFF3B82F6),
+            barWidth: 3,
+            dotData: FlDotData(
+              show: true,
+              getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                radius: 3.5,
+                color: Colors.white,
+                strokeWidth: 2,
+                strokeColor: const Color(0xFF3B82F6),
+              ),
+            ),
+            belowBarData: BarAreaData(
+              show: true,
+              color: const Color(0xFF3B82F6).withOpacity(0.12),
+            ),
+          ),
+        ],
+        lineTouchData: LineTouchData(
+          handleBuiltInTouches: true,
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (touchedSpots) {
+              return touchedSpots.map((ts) {
+                final label = weekdayLabel(ts.x);
+                return LineTooltipItem(
+                  label.isEmpty ? '' : '$label\n',
+                  const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold),
+                  children: [
+                    TextSpan(
+                      text: '${ts.y.toStringAsFixed(1)} hours',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ],
+                );
+              }).toList();
+            },
+          ),
+        ),
       ),
     );
   }
@@ -888,6 +1222,106 @@ class _SidebarLanguageChipState extends State<_SidebarLanguageChip> {
           style: const TextStyle(color: Colors.white),
         ),
       ),
+    );
+  }
+}
+
+// Small centered loader overlay for a chart area
+class _MiniLoader extends StatelessWidget {
+  const _MiniLoader();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Align(
+        alignment: Alignment.center,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.6),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const SizedBox(
+            height: 18,
+            width: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Inline date button for the Daily Hours card header.
+class _InlineDateButton extends StatelessWidget {
+  final DateTime date;
+  final VoidCallback onTap;
+  const _InlineDateButton({required this.date, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+            const SizedBox(width: 8),
+            Text(
+              '${date.day}/${date.month}/${date.year}',
+              style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Legend item used in the role distribution legend.
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+  final String valueText;
+  const _LegendItem({
+    required this.color,
+    required this.label,
+    required this.valueText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: Color(0xFF2D3748)),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '($valueText)',
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        ),
+      ],
     );
   }
 }

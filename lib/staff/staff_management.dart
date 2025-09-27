@@ -1,15 +1,17 @@
 // lib/staff/staff management.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 class StaffMember {
   String name;
   String role;
   String contact;
-  // Simple display string for demo (e.g., "Mon 09:00–13:00; Fri 14:00–20:00")
+  // Availability kept in model for backward compatibility, but not shown/edited in UI.
   String availability;
-  int maxHours; // New field for max hours per week
-  double hourlyRate; // New field for hourly rate
-  
+  int maxHours; // max hours per week
+  double hourlyRate; // hourly rate
+
   StaffMember({
     required this.name,
     required this.role,
@@ -27,8 +29,31 @@ class StaffManagementPage extends StatefulWidget {
 }
 
 class _StaffManagementPageState extends State<StaffManagementPage> {
-  final roles = <String>['Cashier', 'Cleaner', 'Chef', 'Server', 'Manager', 'Sales', 'Stock', 'Barista'];
+  // API config
+  static const String _base = 'https://studious-space-cod-7qjp49qj756fg74-5000.app.github.dev';
+  static const String _staffViewPath = '/api/staff/view';
+  static const String _staffCreatePath = '/api/staff/create';
+
+  // TODO: Replace this with real shop selection / app state.
+  static const int _shopId = 1;
+
+  // UI state
+  bool _loading = false;
+  String? _error;
+
+  final roles = <String>[
+    'Cashier',
+    'Cleaner',
+    'Chef',
+    'Server',
+    'Manager',
+    'Sales',
+    'Stock',
+    'Barista'
+  ];
+
   final List<StaffMember> staff = [
+    // Initial placeholders; replaced by API on load.
     StaffMember(
       name: 'Aisha Khan',
       role: 'Cashier',
@@ -77,10 +102,169 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
   final TextEditingController _searchController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    _fetchStaff();
+  }
+
+  Future<void> _fetchStaff() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final uri = Uri.parse('$_base$_staffViewPath').replace(queryParameters: {
+        'shop_id': _shopId.toString(),
+      });
+
+      final res = await http.get(uri, headers: {'Accept': 'application/json'});
+
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        // ignore: avoid_print
+        print('GET $_staffViewPath failed: ${res.statusCode} ${res.reasonPhrase}');
+        // ignore: avoid_print
+        print('Body: ${res.body}');
+        throw Exception('HTTP ${res.statusCode}');
+      }
+
+      final decoded = _safeDecode(res.body);
+      final list = _extractList(decoded);
+      final loaded = _mapStaffList(list);
+
+      setState(() {
+        staff
+          ..clear()
+          ..addAll(loaded);
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to load staff. Showing local data.';
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<StaffMember?> _createStaff(StaffMember s) async {
+  final uri = Uri.parse('$_base$_staffCreatePath');
+
+  // Map to backend-required keys and types
+  final payload = {
+    'shop_id': _shopId,                         // int
+    'full_name': s.name.trim(),                 // string
+    'role_name': s.role.trim(),                 // string
+    'contact': s.contact.trim(),                // keep if backend accepts it
+    'availability': s.availability,             // optional
+    'max_hours_per_week': s.maxHours,           // int
+    'hourly_rate': s.hourlyRate,                // number (if accepted)
+  };
+
+  final res = await http.post(
+    uri,
+    headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+    body: jsonEncode(payload),
+  );
+
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    // ignore: avoid_print
+    print('POST $_staffCreatePath failed: ${res.statusCode} ${res.reasonPhrase}');
+    // ignore: avoid_print
+    print('Body: ${res.body}');
+    return null;
+  }
+
+  // Prefer server-returned row
+  final decoded = _safeDecode(res.body);
+  final list = _extractList(decoded);
+  final mapped = _mapStaffList(list);
+  if (mapped.isNotEmpty) return mapped.first;
+
+  // If server doesn’t echo the new row, fall back to local object
+  return s;
+}
+
+
+  dynamic _safeDecode(String s) {
+    try {
+      return jsonDecode(s);
+    } catch (_) {
+      final i = s.indexOf('{');
+      if (i >= 0) {
+        try {
+          return jsonDecode(s.substring(i));
+        } catch (_) {}
+      }
+      return [];
+    }
+  }
+
+  dynamic _extractList(dynamic json) {
+    if (json is List) return json;
+    if (json is Map) {
+      for (final k in [
+        'data',
+        'result',
+        'items',
+        'staff',
+        'records',
+        'results',
+        'staff_list'
+      ]) {
+        final v = json[k];
+        if (v is List) return v;
+        if (v is Map) {
+          for (final kk in ['items', 'list', 'records', 'results']) {
+            final vv = v[kk];
+            if (vv is List) return vv;
+          }
+        }
+      }
+      if (json.containsKey('name') || json.containsKey('fullName')) {
+        return [json];
+      }
+    }
+    return [];
+  }
+
+  List<StaffMember> _mapStaffList(dynamic listJson) {
+    final list = (listJson is List) ? listJson : <dynamic>[];
+    final out = <StaffMember>[];
+    for (final e in list) {
+      if (e is! Map) continue;
+
+      final name = (e['name'] ?? e['fullName'] ?? e['employeeName'] ?? '').toString().trim();
+      final role = (e['role'] ?? e['position'] ?? '').toString().trim();
+      final contact = (e['contact'] ?? e['phone'] ?? e['phoneNumber'] ?? '').toString().trim();
+
+      final availability = (e['availability'] ?? e['avail'] ?? '—').toString();
+      final maxHours = (e['maxHours'] is num)
+          ? (e['maxHours'] as num).toInt()
+          : int.tryParse('${e['max_hours'] ?? e['max_per_week'] ?? ''}') ?? 40;
+      final hourlyRate = (e['hourlyRate'] is num)
+          ? (e['hourlyRate'] as num).toDouble()
+          : double.tryParse('${e['hourly_rate'] ?? e['rate'] ?? ''}') ?? 0.0;
+
+      if (name.isEmpty) continue;
+
+      out.add(StaffMember(
+        name: name,
+        role: role.isEmpty ? 'Staff' : role,
+        contact: contact,
+        availability: availability,
+        maxHours: maxHours,
+        hourlyRate: hourlyRate,
+      ));
+    }
+    return out;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final filteredStaff = staff.where((s) =>
-        s.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-        s.role.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+    final filteredStaff = staff
+        .where((s) =>
+            s.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+            s.role.toLowerCase().contains(_searchQuery.toLowerCase()))
+        .toList();
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -109,14 +293,6 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
                               color: Colors.grey[800],
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Manage your team members and their schedules',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey[600],
-                            ),
-                          ),
                         ],
                       ),
                       Container(
@@ -137,19 +313,30 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
                         ),
                         child: ElevatedButton.icon(
                           onPressed: () async {
-                            final created = await showDialog<StaffMember>(
+                            final draft = await showDialog<StaffMember>(
                               context: context,
                               builder: (_) => _StaffEditorDialog(roles: roles),
                             );
-                            if (created != null) {
-                              setState(() => staff.add(created));
+                            if (draft != null) {
+                              final saved = await _createStaff(draft);
+                              if (saved != null) {
+                                setState(() => staff.add(saved));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Staff created successfully')),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Failed to save staff on server')),
+                                );
+                              }
                             }
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.transparent,
                             foregroundColor: Colors.white,
                             shadowColor: Colors.transparent,
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 24, vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -157,46 +344,14 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
                           icon: const Icon(Icons.person_add, size: 20),
                           label: const Text(
                             'Add Staff',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),
                     ],
                   ),
-                  
                   const SizedBox(height: 24),
-                  
-                  // Stats Cards Row
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          'Total Staff',
-                          '${staff.length}',
-                          Icons.people,
-                          Colors.blue,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildStatCard(
-                          'Active Roles',
-                          '${staff.map((s) => s.role).toSet().length}',
-                          Icons.work,
-                          Colors.green,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildStatCard(
-                          'Avg Hours',
-                          '${(staff.fold<int>(0, (sum, s) => sum + s.maxHours) / staff.length).toInt()}',
-                          Icons.schedule,
-                          Colors.orange,
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
@@ -231,7 +386,8 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
                         )
                       : null,
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                 ),
               ),
             ),
@@ -274,206 +430,265 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
                               color: Colors.grey[800],
                             ),
                           ),
+                          const Spacer(),
+                          if (_loading)
+                            const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
                         ],
                       ),
                     ),
-                    
+
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.amber[50],
+                            border: Border.all(color: Colors.amber[200]!),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            _error!,
+                            style: TextStyle(
+                                color: Colors.amber[900], fontSize: 12),
+                          ),
+                        ),
+                      ),
+
                     // Table Content
                     Expanded(
-                      child: filteredStaff.isEmpty
-                          ? _buildEmptyState()
-                          : SingleChildScrollView(
-                              child: DataTable(
-                                columnSpacing: 20,
-                                headingRowHeight: 60,
-                                dataRowHeight: 70,
-                                sortColumnIndex: _sortColumnIndex,
-                                sortAscending: _sortAscending,
-                                headingTextStyle: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey[700],
-                                  fontSize: 14,
+                      child: RefreshIndicator(
+                        onRefresh: _fetchStaff,
+                        child: Builder(builder: (context) {
+                          final filtered = staff
+                              .where((s) =>
+                                  s.name
+                                      .toLowerCase()
+                                      .contains(_searchQuery.toLowerCase()) ||
+                                  s.role
+                                      .toLowerCase()
+                                      .contains(_searchQuery.toLowerCase()))
+                              .toList();
+
+                          if (filtered.isEmpty) {
+                            return ListView(
+                              children: [
+                                SizedBox(height: 300, child: _buildEmptyState())
+                              ],
+                            );
+                          }
+
+                          return SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            child: DataTable(
+                              columnSpacing: 20,
+                              headingRowHeight: 60,
+                              dataRowHeight: 70,
+                              sortColumnIndex: _sortColumnIndex,
+                              sortAscending: _sortAscending,
+                              headingTextStyle: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[700],
+                                fontSize: 14,
+                              ),
+                              columns: [
+                                DataColumn(
+                                  label: const Text('Employee Name'),
+                                  onSort: (i, asc) =>
+                                      _sortBy((s) => s.name, i, asc),
                                 ),
-                                columns: [
-                                  DataColumn(
-                                    label: const Text('Employee Name'),
-                                    onSort: (i, asc) => _sortBy((s) => s.name, i, asc),
-                                  ),
-                                  DataColumn(
-                                    label: const Text('Role'),
-                                    onSort: (i, asc) => _sortBy((s) => s.role, i, asc),
-                                  ),
-                                  const DataColumn(label: Text('Availability')),
-                                  const DataColumn(label: Text('Contact')),
-                                  const DataColumn(label: Text('Max Hours')),
-                                  const DataColumn(label: Text('Hourly Rate')),
-                                  const DataColumn(label: Text('Actions')),
-                                ],
-                                rows: filteredStaff.map((s) {
-                                  return DataRow(
-                                    cells: [
-                                      DataCell(
-                                        Row(
-                                          children: [
-                                            CircleAvatar(
-                                              radius: 18,
-                                              backgroundColor: _getRoleColor(s.role).withOpacity(0.2),
-                                              child: Text(
-                                                s.name.split(' ').map((e) => e[0]).join('').toUpperCase(),
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  color: _getRoleColor(s.role),
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              mainAxisAlignment: MainAxisAlignment.center,
-                                              children: [
-                                                Text(
-                                                  s.name,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 14,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      DataCell(
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: _getRoleColor(s.role).withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(20),
-                                            border: Border.all(
-                                              color: _getRoleColor(s.role).withOpacity(0.3),
-                                              width: 1,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            s.role,
-                                            style: TextStyle(
-                                              color: _getRoleColor(s.role),
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      DataCell(
-                                        SizedBox(
-                                          width: 200,
-                                          child: Text(
-                                            s.availability,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[600],
-                                            ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ),
-                                      DataCell(
-                                        Row(
-                                          children: [
-                                            Icon(Icons.phone, size: 14, color: Colors.grey[500]),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              s.contact,
+                                DataColumn(
+                                  label: const Text('Role'),
+                                  onSort: (i, asc) =>
+                                      _sortBy((s) => s.role, i, asc),
+                                ),
+                                const DataColumn(label: Text('Contact')),
+                                const DataColumn(label: Text('Max Hours')),
+                                const DataColumn(label: Text('Hourly Rate')),
+                                const DataColumn(label: Text('Actions')),
+                              ],
+                              rows: filtered.map((s) {
+                                return DataRow(
+                                  cells: [
+                                    DataCell(
+                                      Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 18,
+                                            backgroundColor: _getRoleColor(s.role)
+                                                .withOpacity(0.2),
+                                            child: Text(
+                                              s.name
+                                                  .split(' ')
+                                                  .map((e) => e[0])
+                                                  .join('')
+                                                  .toUpperCase(),
                                               style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                color: _getRoleColor(s.role),
                                                 fontSize: 12,
-                                                color: Colors.grey[700],
                                               ),
                                             ),
-                                          ],
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Text(
+                                                s.name,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    DataCell(
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: _getRoleColor(s.role)
+                                              .withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                          border: Border.all(
+                                            color: _getRoleColor(s.role)
+                                                .withOpacity(0.3),
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          s.role,
+                                          style: TextStyle(
+                                            color: _getRoleColor(s.role),
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
+                                          ),
                                         ),
                                       ),
-                                      DataCell(
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: Colors.blue.withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: Text(
-                                            '${s.maxHours}h/week',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
+                                    ),
+                                    DataCell(
+                                      Row(
+                                        children: [
+                                          Icon(Icons.phone,
+                                              size: 14, color: Colors.grey[500]),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            s.contact,
+                                            style: TextStyle(
                                               fontSize: 12,
-                                              color: Colors.blue,
+                                              color: Colors.grey[700],
                                             ),
                                           ),
-                                        ),
+                                        ],
                                       ),
-                                      DataCell(
-                                        Text(
-                                          '₹${s.hourlyRate.toStringAsFixed(2)}',
+                                    ),
+                                    DataCell(
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.blue.withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          '${s.maxHours}h/week',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w600,
                                             fontSize: 12,
-                                            color: Colors.green,
+                                            color: Colors.blue,
                                           ),
                                         ),
                                       ),
-                                      DataCell(
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Container(
-                                              decoration: BoxDecoration(
-                                                color: Colors.blue.withOpacity(0.1),
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              child: IconButton(
-                                                tooltip: 'Edit',
-                                                icon: Icon(Icons.edit, size: 18, color: Colors.blue[600]),
-                                                onPressed: () async {
-                                                  final updated = await showDialog<StaffMember>(
-                                                    context: context,
-                                                    builder: (_) => _StaffEditorDialog(
-                                                      roles: roles,
-                                                      existing: s,
-                                                    ),
-                                                  );
-                                                  if (updated != null) {
-                                                    setState(() {
-                                                      s.name = updated.name;
-                                                      s.role = updated.role;
-                                                      s.contact = updated.contact;
-                                                      s.availability = updated.availability;
-                                                      s.maxHours = updated.maxHours;
-                                                      s.hourlyRate = updated.hourlyRate;
-                                                    });
-                                                  }
-                                                },
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Container(
-                                              decoration: BoxDecoration(
-                                                color: Colors.red.withOpacity(0.1),
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              child: IconButton(
-                                                tooltip: 'Delete',
-                                                icon: Icon(Icons.delete, size: 18, color: Colors.red[600]),
-                                                onPressed: () => _showDeleteDialog(s),
-                                              ),
-                                            ),
-                                          ],
+                                    ),
+                                    DataCell(
+                                      Text(
+                                        '₹${s.hourlyRate.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                          color: Colors.green,
                                         ),
                                       ),
-                                    ],
-                                  );
-                                }).toList(),
-                              ),
+                                    ),
+                                    DataCell(
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue
+                                                  .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: IconButton(
+                                              tooltip: 'Edit',
+                                              icon: Icon(Icons.edit,
+                                                  size: 18,
+                                                  color: Colors.blue[600]),
+                                              onPressed: () async {
+                                                final updated = await showDialog<
+                                                    StaffMember>(
+                                                  context: context,
+                                                  builder: (_) =>
+                                                      _StaffEditorDialog(
+                                                          roles: roles,
+                                                          existing: s),
+                                                );
+                                                if (updated != null) {
+                                                  setState(() {
+                                                    s.name = updated.name;
+                                                    s.role = updated.role;
+                                                    s.contact = updated.contact;
+                                                    s.maxHours =
+                                                        updated.maxHours;
+                                                    s.hourlyRate =
+                                                        updated.hourlyRate;
+                                                  });
+                                                }
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.red
+                                                  .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: IconButton(
+                                              tooltip: 'Delete',
+                                              icon: Icon(Icons.delete,
+                                                  size: 18,
+                                                  color: Colors.red[600]),
+                                              onPressed: () =>
+                                                  _showDeleteDialog(s),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
                             ),
+                          );
+                        }),
+                      ),
                     ),
                   ],
                 ),
@@ -481,58 +696,6 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey[800],
-                  ),
-                ),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -558,7 +721,7 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            _searchQuery.isEmpty 
+            _searchQuery.isEmpty
                 ? 'Add your first team member to get started'
                 : 'Try a different search term',
             style: TextStyle(
@@ -575,7 +738,8 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
             Container(
@@ -649,7 +813,8 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
     }
   }
 
-  void _sortBy(Comparable Function(StaffMember) key, int columnIndex, bool ascending) {
+  void _sortBy(
+      Comparable Function(StaffMember) key, int columnIndex, bool ascending) {
     setState(() {
       _sortColumnIndex = columnIndex;
       _sortAscending = ascending;
@@ -675,33 +840,20 @@ class _StaffEditorDialogState extends State<_StaffEditorDialog> {
   final name = TextEditingController();
   final contact = TextEditingController();
   final maxHoursController = TextEditingController();
-  final hourlyRateController = TextEditingController();
-  late String role;
-
-  // Availability editor: choose days via chips and one common time range for simplicity.
-  final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  final Set<String> selected = {};
-  TimeOfDay start = const TimeOfDay(hour: 9, minute: 0);
-  TimeOfDay end = const TimeOfDay(hour: 17, minute: 0);
+  // Removed hourlyRateController from UI, but keep model field
+  String role = '';
 
   @override
   void initState() {
     super.initState();
     role = widget.roles.first;
     maxHoursController.text = '40';
-    hourlyRateController.text = '1200.00';
-    
+
     if (widget.existing != null) {
       name.text = widget.existing!.name;
       contact.text = widget.existing!.contact;
       role = widget.existing!.role;
       maxHoursController.text = widget.existing!.maxHours.toString();
-      hourlyRateController.text = widget.existing!.hourlyRate.toStringAsFixed(2);
-      
-      // Best-effort parse: mark days present in the availability string.
-      for (final d in days) {
-        if (widget.existing!.availability.contains(d)) selected.add(d);
-      }
     }
   }
 
@@ -734,7 +886,9 @@ class _StaffEditorDialogState extends State<_StaffEditorDialog> {
                   ),
                   const SizedBox(width: 16),
                   Text(
-                    widget.existing == null ? 'Add New Staff Member' : 'Edit Staff Member',
+                    widget.existing == null
+                        ? 'Add New Staff Member'
+                        : 'Edit Staff Member',
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -742,10 +896,10 @@ class _StaffEditorDialogState extends State<_StaffEditorDialog> {
                   ),
                 ],
               ),
-              
+
               const SizedBox(height: 24),
-              
-              // Basic Information Section
+
+              // Basic Information
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -764,7 +918,7 @@ class _StaffEditorDialogState extends State<_StaffEditorDialog> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
+
                     TextField(
                       controller: name,
                       decoration: InputDecoration(
@@ -778,7 +932,7 @@ class _StaffEditorDialogState extends State<_StaffEditorDialog> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
+
                     InputDecorator(
                       decoration: InputDecoration(
                         labelText: 'Role',
@@ -793,29 +947,34 @@ class _StaffEditorDialogState extends State<_StaffEditorDialog> {
                         child: DropdownButton<String>(
                           value: role,
                           isExpanded: true,
-                          items: widget.roles.map((r) => DropdownMenuItem(
-                            value: r,
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 12,
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: _getRoleColor(r),
-                                    borderRadius: BorderRadius.circular(6),
+                          items: widget.roles
+                              .map(
+                                (r) => DropdownMenuItem(
+                                  value: r,
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 12,
+                                        height: 12,
+                                        decoration: BoxDecoration(
+                                          color: _getRoleColor(r),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(r),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                Text(r),
-                              ],
-                            ),
-                          )).toList(),
+                              )
+                              .toList(),
                           onChanged: (v) => setState(() => role = v!),
                         ),
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
+
                     TextField(
                       controller: contact,
                       decoration: InputDecoration(
@@ -831,10 +990,10 @@ class _StaffEditorDialogState extends State<_StaffEditorDialog> {
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 20),
-              
-              // Work Information Section
+
+              // Work Information (Hourly Rate field removed)
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -853,7 +1012,7 @@ class _StaffEditorDialogState extends State<_StaffEditorDialog> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
+
                     Row(
                       children: [
                         Expanded(
@@ -871,192 +1030,47 @@ class _StaffEditorDialogState extends State<_StaffEditorDialog> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: TextField(
-                            controller: hourlyRateController,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              labelText: 'Hourly Rate (₹)',
-                              prefixIcon: const Icon(Icons.currency_rupee),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              filled: true,
-                              fillColor: Colors.white,
-                            ),
-                          ),
-                        ),
+                        // Hourly rate input intentionally removed
                       ],
                     ),
                   ],
                 ),
               ),
-              
-              const SizedBox(height: 20),
-              
-              // Availability Section
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.green[50],
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Availability',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.green[700],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    Text(
-                      'Select working days:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: days.map((d) {
-                        final isSelected = selected.contains(d);
-                        return FilterChip(
-                          label: Text(d),
-                          selected: isSelected,
-                          onSelected: (v) => setState(() {
-                            if (v) {
-                              selected.add(d);
-                            } else {
-                              selected.remove(d);
-                            }
-                          }),
-                          backgroundColor: Colors.white,
-                          selectedColor: Colors.green.withOpacity(0.2),
-                          checkmarkColor: Colors.green[700],
-                          labelStyle: TextStyle(
-                            color: isSelected ? Colors.green[700] : Colors.grey[600],
-                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                          ),
-                          side: BorderSide(
-                            color: isSelected ? Colors.green : Colors.grey[300]!,
-                            width: isSelected ? 2 : 1,
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    Text(
-                      'Working hours:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey[300]!),
-                            ),
-                            child: ListTile(
-                              dense: true,
-                              leading: Icon(Icons.access_time, color: Colors.green[600]),
-                              title: Text(
-                                'Start: ${start.format(context)}',
-                                style: const TextStyle(fontWeight: FontWeight.w500),
-                              ),
-                              onTap: () async {
-                                final t = await showTimePicker(
-                                  context: context,
-                                  initialTime: start,
-                                );
-                                if (t != null) setState(() => start = t);
-                              },
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey[300]!),
-                            ),
-                            child: ListTile(
-                              dense: true,
-                              leading: Icon(Icons.access_time_filled, color: Colors.green[600]),
-                              title: Text(
-                                'End: ${end.format(context)}',
-                                style: const TextStyle(fontWeight: FontWeight.w500),
-                              ),
-                              onTap: () async {
-                                final t = await showTimePicker(
-                                  context: context,
-                                  initialTime: end,
-                                );
-                                if (t != null) setState(() => end = t);
-                              },
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              
+
               const SizedBox(height: 32),
-              
-              // Action Buttons
+
+              // Actions
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
                     style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
                     ),
                     child: const Text('Cancel'),
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton(
                     onPressed: () {
-                      final avail = selected.isEmpty
-                          ? '—'
-                          : selected.map((d) => '$d ${_fmt(start)}–${_fmt(end)}').join('; ');
                       final result = StaffMember(
                         name: name.text.trim(),
                         role: role,
                         contact: contact.text.trim(),
-                        availability: avail,
+                        // Availability removed from UI: keep previous value on edit, or set placeholder for new
+                        availability: widget.existing?.availability ?? '—',
                         maxHours: int.tryParse(maxHoursController.text) ?? 40,
-                        hourlyRate: double.tryParse(hourlyRateController.text) ?? 1200.0,
+                        // Hourly rate removed from UI: preserve on edit; default to 0 for new
+                        hourlyRate: widget.existing?.hourlyRate ?? 0.0,
                       );
                       Navigator.pop(context, result);
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue[600],
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 32, vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -1097,7 +1111,4 @@ class _StaffEditorDialogState extends State<_StaffEditorDialog> {
         return Colors.grey;
     }
   }
-
-  String _fmt(TimeOfDay t) =>
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 }

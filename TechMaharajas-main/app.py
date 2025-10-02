@@ -16,6 +16,7 @@ from routes.report import report_bp
 from routes.agent import agent_bp
 from routes.availability import availability_bp
 from routes.solve import solve_bp
+from routes.login_signup import login_bp
 # from routes.agent import agent_bp
 
 # from routes.agent_memory import agent_memory_bp
@@ -46,6 +47,7 @@ app.register_blueprint(staff_update_bp)
 app.register_blueprint(staff_delete_bp)
 app.register_blueprint(solve_bp)  # exposes POST /api/availability/save
 app.register_blueprint(availability_bp)  # exposes POST /api/availability/save
+app.register_blueprint(login_bp)
 
 # app.register_blueprint(agent_bp)
 # app.register_blueprint(agent_memory_bp)

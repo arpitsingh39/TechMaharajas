@@ -1,15 +1,15 @@
-// lib/Report page.dart
+// lib/reportpage.dart
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 // Excel export
-import 'package:excel/excel.dart'; // pubspec: excel: ^4.0.6  [web:98]
+import 'package:excel/excel.dart';
 import 'dart:typed_data';
-// For Flutter Web download
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html; // Blob + AnchorElement for download  [web:135][web:145]
+
+// Cross‑platform save helper (conditional import facade)
+import 'io/save_bytes.dart' show saveBytes;
 
 class ReportPage extends StatelessWidget {
   const ReportPage({super.key});
@@ -170,7 +170,12 @@ class ReportPage extends StatelessWidget {
                                     radius: 25,
                                     backgroundColor: _getRoleColor(staff["Role"]).withOpacity(0.2),
                                     child: Text(
-                                      staff["Name"].toString().split(' ').map((e) => e[0]).join('').toUpperCase(),
+                                      staff["Name"]
+                                          .toString()
+                                          .split(' ')
+                                          .map((e) => e[0])
+                                          .join('')
+                                          .toUpperCase(),
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                         color: _getRoleColor(staff["Role"]),
@@ -218,7 +223,7 @@ class ReportPage extends StatelessWidget {
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
                                       Text(
-                                        '₹${staff["Total Pay (₹)"].toStringAsFixed(2)}',
+                                        '₹${(staff["Total Pay (₹)"] as num).toStringAsFixed(2)}',
                                         style: const TextStyle(
                                           fontSize: 18,
                                           fontWeight: FontWeight.bold,
@@ -256,7 +261,8 @@ class ReportPage extends StatelessWidget {
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                                   children: [
-                                    _buildInfoItem('Rate', '₹${staff["Hourly Rate (₹)"].toStringAsFixed(2)}/hr'),
+                                    _buildInfoItem('Rate',
+                                        '₹${(staff["Hourly Rate (₹)"] as num).toStringAsFixed(2)}/hr'),
                                     Container(height: 20, width: 1, color: Colors.grey[300]),
                                     _buildInfoItem('Hours', '${staff["Total Hours"]}'),
                                   ],
@@ -289,7 +295,8 @@ class ReportPage extends StatelessWidget {
                       elevation: 2,
                     ),
                     icon: const Icon(Icons.picture_as_pdf),
-                    label: const Text('Export as PDF', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    label: const Text('Export as PDF',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -301,7 +308,8 @@ class ReportPage extends StatelessWidget {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     icon: const Icon(Icons.grid_on),
-                    label: const Text('Export as Excel', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    label: const Text('Export as Excel',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
                 ),
               ],
@@ -315,9 +323,11 @@ class ReportPage extends StatelessWidget {
   Widget _buildInfoItem(String label, String value) {
     return Column(
       children: [
-        Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+        Text(label,
+            style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
         const SizedBox(height: 2),
-        Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+        Text(value,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
       ],
     );
   }
@@ -363,7 +373,8 @@ class ReportPage extends StatelessWidget {
       ];
     }).toList();
 
-    final total = staffData.fold<num>(0, (sum, s) => sum + (s['Total Pay (₹)'] as num));
+    final total =
+        staffData.fold<num>(0, (sum, s) => sum + (s['Total Pay (₹)'] as num));
 
     pdf.addPage(
       pw.Page(
@@ -373,11 +384,16 @@ class ReportPage extends StatelessWidget {
           children: [
             pw.Header(
               level: 0,
-              child: pw.Text('Staff Payroll Report', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
+              child: pw.Text('Staff Payroll Report',
+                  style:
+                      pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
             ),
             pw.SizedBox(height: 8),
             pw.Text('Total Payroll: ₹${total.toStringAsFixed(2)}',
-                style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.green)),
+                style: pw.TextStyle(
+                    fontSize: 16,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.green)),
             pw.SizedBox(height: 16),
             pw.TableHelper.fromTextArray(
               headers: headers,
@@ -402,7 +418,7 @@ class ReportPage extends StatelessWidget {
     final sheet = excel.sheets[excel.getDefaultSheet()!]!;
 
     const headers = ['Name', 'Role', 'Hourly Rate (₹)', 'Total Hours', 'Total Pay (₹)'];
-    sheet.appendRow(headers.map((h) => TextCellValue(h)).toList()); // CellValue  [web:98][web:108]
+    sheet.appendRow(headers.map((h) => TextCellValue(h)).toList());
 
     for (final s in staffData) {
       sheet.appendRow([
@@ -411,23 +427,16 @@ class ReportPage extends StatelessWidget {
         TextCellValue((s['Hourly Rate (₹)'] as num).toStringAsFixed(2)),
         TextCellValue((s['Total Hours'] as num).toStringAsFixed(1)),
         TextCellValue((s['Total Pay (₹)'] as num).toStringAsFixed(2)),
-      ]); // wrap values  [web:98][web:108]
+      ]);
     }
 
     final Uint8List bytes = excel.encode() as Uint8List;
 
-    final blob = html.Blob(
-      [bytes],
+    await saveBytes(
+      'payroll_report.xlsx',
+      bytes,
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ); // web download  [web:135][web:145]
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    final anchor = html.AnchorElement(href: url)
-      ..download = 'payroll_report.xlsx'
-      ..style.display = 'none';
-    html.document.body!.children.add(anchor);
-    anchor.click();
-    html.document.body!.children.remove(anchor);
-    html.Url.revokeObjectUrl(url);
+    );
   }
 }
 
@@ -504,7 +513,12 @@ class StaffDetailPage extends StatelessWidget {
                     radius: 30,
                     backgroundColor: Colors.white.withOpacity(0.2),
                     child: Text(
-                      staff["Name"].toString().split(' ').map((e) => e[0]).join('').toUpperCase(),
+                      staff["Name"]
+                          .toString()
+                          .split(' ')
+                          .map((e) => e[0])
+                          .join('')
+                          .toUpperCase(),
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
@@ -534,7 +548,7 @@ class StaffDetailPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '₹${staff["Total Pay (₹)"].toStringAsFixed(2)}',
+                          '₹${(staff["Total Pay (₹)"] as num).toStringAsFixed(2)}',
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
@@ -574,7 +588,9 @@ class StaffDetailPage extends StatelessWidget {
                   ],
                 ),
                 child: SingleChildScrollView(
-                  child: DataTable(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
                     columnSpacing: 20,
                     headingRowHeight: 60,
                     dataRowHeight: 56,
@@ -631,6 +647,7 @@ class StaffDetailPage extends StatelessWidget {
                         ],
                       );
                     }).toList(),
+                    ),
                   ),
                 ),
               ),
@@ -648,7 +665,8 @@ class StaffDetailPage extends StatelessWidget {
                 elevation: 2,
               ),
               icon: const Icon(Icons.picture_as_pdf),
-              label: const Text('Export as PDF', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              label: const Text('Export as PDF',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -666,11 +684,14 @@ class StaffDetailPage extends StatelessWidget {
     final sheet = excel.sheets[excel.getDefaultSheet()!]!;
 
     // Staff header info
-    sheet.appendRow([TextCellValue('Staff Payroll Report')]); // title  [web:98][web:108]
+    sheet.appendRow([TextCellValue('Staff Payroll Report')]);
     sheet.appendRow([TextCellValue('Name:'), TextCellValue(staff['Name'] as String)]);
     sheet.appendRow([TextCellValue('Role:'), TextCellValue(staff['Role'] as String)]);
     sheet.appendRow([TextCellValue('Hourly Rate (₹):'), TextCellValue(hourlyRate.toStringAsFixed(2))]);
-    sheet.appendRow([TextCellValue('Total Pay (₹):'), TextCellValue((staff['Total Pay (₹)'] as num).toStringAsFixed(2))]);
+    sheet.appendRow([
+      TextCellValue('Total Pay (₹):'),
+      TextCellValue((staff['Total Pay (₹)'] as num).toStringAsFixed(2))
+    ]);
 
     sheet.appendRow([TextCellValue('')]); // blank line
 
@@ -696,20 +717,12 @@ class StaffDetailPage extends StatelessWidget {
       ]);
     }
 
-    final Uint8List bytes = excel.encode() as Uint8List;
-
-    final blob = html.Blob(
-      [bytes],
+    final Uint8List bytes = Uint8List.fromList(excel.encode()!);
+    await saveBytes(
+      '${staff['Name']}_payroll.xlsx',
+      bytes,
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ); // download  [web:135][web:145]
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    final anchor = html.AnchorElement(href: url)
-      ..download = '${staff['Name']}_payroll.xlsx'
-      ..style.display = 'none';
-    html.document.body!.children.add(anchor);
-    anchor.click();
-    html.document.body!.children.remove(anchor);
-    html.Url.revokeObjectUrl(url);
+    );
   }
 
   Future<void> _generatePDF(
@@ -724,7 +737,9 @@ class StaffDetailPage extends StatelessWidget {
           children: [
             pw.Header(
               level: 0,
-              child: pw.Text('Staff Payroll Report', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
+              child: pw.Text('Staff Payroll Report',
+                  style:
+                      pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
             ),
             pw.SizedBox(height: 20),
             pw.Container(
@@ -736,19 +751,27 @@ class StaffDetailPage extends StatelessWidget {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text('Name: ${staff["Name"]}', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                  pw.Text('Name: ${staff["Name"]}',
+                      style:
+                          pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
                   pw.SizedBox(height: 4),
                   pw.Text('Role: ${staff["Role"]}', style: const pw.TextStyle(fontSize: 14)),
                   pw.SizedBox(height: 4),
-                  pw.Text('Hourly Rate: ₹${hourlyRate.toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 14)),
+                  pw.Text('Hourly Rate: ₹${hourlyRate.toStringAsFixed(2)}',
+                      style: const pw.TextStyle(fontSize: 14)),
                   pw.SizedBox(height: 4),
-                  pw.Text('Total Pay: ₹${staff["Total Pay (₹)"].toStringAsFixed(2)}',
-                      style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.green)),
+                  pw.Text('Total Pay: ₹${(staff["Total Pay (₹)"] as num).toStringAsFixed(2)}',
+                      style: pw.TextStyle(
+                          fontSize: 16,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.green)),
                 ],
               ),
             ),
             pw.SizedBox(height: 20),
-            pw.Text('Daily Schedule', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Daily Schedule',
+                style:
+                    pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 12),
             pw.Table(
               border: pw.TableBorder.all(),
@@ -756,11 +779,26 @@ class StaffDetailPage extends StatelessWidget {
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: PdfColors.grey200),
                   children: [
-                    pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('Day', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('Hours', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('Rate', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('Daily Pay', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
-                    pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('Shift', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('Day',
+                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('Hours',
+                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('Rate',
+                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('Daily Pay',
+                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                    pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('Shift',
+                            style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
                   ],
                 ),
                 ...dailySchedule.map((d) {
@@ -768,11 +806,22 @@ class StaffDetailPage extends StatelessWidget {
                   final dailyPay = hours * hourlyRate;
                   return pw.TableRow(
                     children: [
-                      pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(d['day'] as String)),
-                      pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(hours == 0 ? '-' : '${hours.toStringAsFixed(1)}h')),
-                      pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('₹${hourlyRate.toStringAsFixed(2)}')),
-                      pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(dailyPay == 0 ? '-' : '₹${dailyPay.toStringAsFixed(2)}')),
-                      pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(d['shift'] as String)),
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(d['day'] as String)),
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(hours == 0 ? '-' : '${hours.toStringAsFixed(1)}h')),
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text('₹${hourlyRate.toStringAsFixed(2)}')),
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(
+                              dailyPay == 0 ? '-' : '₹${dailyPay.toStringAsFixed(2)}')),
+                      pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(d['shift'] as String)),
                     ],
                   );
                 }),

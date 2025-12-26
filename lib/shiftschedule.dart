@@ -139,68 +139,125 @@ class _ShiftSchedulePageState extends State<ShiftSchedulePage> with TickerProvid
   Widget _headerCard(TextStyle heading) => Container(
         padding: const EdgeInsets.all(20),
         decoration: _cardBox(),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Shift Schedule', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.grey[900])),
-              const SizedBox(height: 4),
-              Text('Define hours, staffing by role, and peak-hours before generating', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
-            ]),
-            Row(
+        child: LayoutBuilder(builder: (context, c) {
+          final narrow = c.maxWidth < 520;
+          if (narrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _OutlinedPill(
-                  onTap: () => _selectDate(context),
-                  child: Row(
-                    children: [
-                      Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
-                      const SizedBox(width: 8),
-                      Text('${selectedDate.day}/${selectedDate.month}/${selectedDate.year}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                    ],
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Shift Schedule', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.grey[900])),
+                  const SizedBox(height: 6),
+                  Text('Define hours, staffing by role, and peak-hours before generating', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                ]),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: _OutlinedPill(
+                    onTap: () => _selectDate(context),
+                    child: Row(
+                      children: [
+                        Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                        const SizedBox(width: 8),
+                        Text('${selectedDate.day}/${selectedDate.month}/${selectedDate.year}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  )),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    height: 48,
+                    child: FilledButton(
+                      onPressed: _loading ? null : _onGeneratePressed,
+                      child: _loading
+                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Text('Generate'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  height: 48,
-                  child: FilledButton(
-                    onPressed: _loading ? null : _onGeneratePressed,
-                    child: _loading
-                        ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Text('Generate'),
-                  ),
-                ),
+                ]),
               ],
-            ),
-          ],
-        ),
+            );
+          }
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Shift Schedule', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.grey[900])),
+                const SizedBox(height: 4),
+                Text('Define hours, staffing by role, and peak-hours before generating', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+              ]),
+              Row(
+                children: [
+                  _OutlinedPill(
+                    onTap: () => _selectDate(context),
+                    child: Row(
+                      children: [
+                        Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                        const SizedBox(width: 8),
+                        Text('${selectedDate.day}/${selectedDate.month}/${selectedDate.year}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    height: 48,
+                    child: FilledButton(
+                      onPressed: _loading ? null : _onGeneratePressed,
+                      child: _loading
+                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Text('Generate'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        }),
       );
 
   Widget _workingWindowCard(TextStyle heading) => Container(
         padding: const EdgeInsets.all(16),
         decoration: _cardBox(),
-        child: Row(
-          children: [
-            Text('Working window', style: heading),
-            const Spacer(),
-            _TimeField(
-              label: 'Start time',
-              value: startTime!,
-              onPick: () async {
-                final t = await showTimePicker(context: context, initialTime: startTime!);
-                if (t != null) setState(() => startTime = t);
-              },
-            ),
-            const SizedBox(width: 12),
-            _TimeField(
-              label: 'End time',
-              value: endTime!,
-              onPick: () async {
-                final t = await showTimePicker(context: context, initialTime: endTime!);
-                if (t != null) setState(() => endTime = t);
-              },
-            ),
-          ],
-        ),
+        child: LayoutBuilder(builder: (context, c) {
+          final narrow = c.maxWidth < 520;
+          if (narrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Working window', style: heading),
+                const SizedBox(height: 8),
+                Row(children: [Expanded(child: _TimeField(label: 'Start time', value: startTime!, onPick: () async {
+                  final t = await showTimePicker(context: context, initialTime: startTime!);
+                  if (t != null) setState(() => startTime = t);
+                })), const SizedBox(width: 12), Expanded(child: _TimeField(label: 'End time', value: endTime!, onPick: () async {
+                  final t = await showTimePicker(context: context, initialTime: endTime!);
+                  if (t != null) setState(() => endTime = t);
+                })),]),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Text('Working window', style: heading),
+              const Spacer(),
+              _TimeField(
+                label: 'Start time',
+                value: startTime!,
+                onPick: () async {
+                  final t = await showTimePicker(context: context, initialTime: startTime!);
+                  if (t != null) setState(() => startTime = t);
+                },
+              ),
+              const SizedBox(width: 12),
+              _TimeField(
+                label: 'End time',
+                value: endTime!,
+                onPick: () async {
+                  final t = await showTimePicker(context: context, initialTime: endTime!);
+                  if (t != null) setState(() => endTime = t);
+                },
+              ),
+            ],
+          );
+        }),
       );
 
   Widget _rolesCard(TextStyle heading) => Container(
@@ -211,11 +268,17 @@ class _ShiftSchedulePageState extends State<ShiftSchedulePage> with TickerProvid
           const SizedBox(height: 8),
           Text('Add roles and how many staff are assigned to each role', style: TextStyle(color: Colors.grey[600])),
           const SizedBox(height: 12),
-          _RoleTable(
-            rows: roles,
-            onAdd: () => setState(() => roles.add(_RoleRow(role: '', count: 1))),
-            onRemove: (i) => setState(() => roles.removeAt(i)),
-            onChanged: (i, v) => setState(() => roles[i] = v),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width),
+              child: _RoleTable(
+                rows: roles,
+                onAdd: () => setState(() => roles.add(_RoleRow(role: '', count: 1))),
+                onRemove: (i) => setState(() => roles.removeAt(i)),
+                onChanged: (i, v) => setState(() => roles[i] = v),
+              ),
+            ),
           ),
         ]),
       );
@@ -228,11 +291,17 @@ class _ShiftSchedulePageState extends State<ShiftSchedulePage> with TickerProvid
           const SizedBox(height: 8),
           Text('Define multiple peak windows per role', style: TextStyle(color: Colors.grey[600])),
           const SizedBox(height: 12),
-          _PeakTable(
-            rows: peaks,
-            onAdd: () => setState(() => peaks.add(_PeakRow(role: '', start: const TimeOfDay(hour: 12, minute: 0), end: const TimeOfDay(hour: 13, minute: 0)))),
-            onRemove: (i) => setState(() => peaks.removeAt(i)),
-            onChanged: (i, v) => setState(() => peaks[i] = v),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width),
+              child: _PeakTable(
+                rows: peaks,
+                onAdd: () => setState(() => peaks.add(_PeakRow(role: '', start: const TimeOfDay(hour: 12, minute: 0), end: const TimeOfDay(hour: 13, minute: 0)))),
+                onRemove: (i) => setState(() => peaks.removeAt(i)),
+                onChanged: (i, v) => setState(() => peaks[i] = v),
+              ),
+            ),
           ),
         ]),
       );
@@ -491,8 +560,7 @@ class _ShiftSchedulePageState extends State<ShiftSchedulePage> with TickerProvid
                     },
               child: const Text('Edit Slots'),
             ),
-            const SizedBox(width: 12),
-            Text(approved ? 'Status: Approved' : 'Status: Draft', style: TextStyle(fontWeight: FontWeight.w600, color: approved ? Colors.green[700] : Colors.orange[700])),
+            
           ],
         ),
         const SizedBox(height: 12),
@@ -836,15 +904,14 @@ class _RoleTable extends StatelessWidget {
         const Divider(height: 1),
         ...rows.asMap().entries.map((e) {
           final i = e.key; final r = e.value;
-          final roleCtrl = TextEditingController(text: r.role);
-          final countCtrl = TextEditingController(text: r.count.toString());
           return Padding(
+            key: ValueKey(i),
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: roleCtrl,
+                  child: TextFormField(
+                    initialValue: r.role,
                     decoration: const InputDecoration(hintText: 'e.g., Cashier', border: OutlineInputBorder()),
                     onChanged: (v) => onChanged(i, r.copyWith(role: v)),
                   ),
@@ -852,8 +919,8 @@ class _RoleTable extends StatelessWidget {
                 const SizedBox(width: 8),
                 SizedBox(
                   width: 120,
-                  child: TextField(
-                    controller: countCtrl,
+                  child: TextFormField(
+                    initialValue: r.count.toString(),
                     decoration: const InputDecoration(hintText: 'Count', border: OutlineInputBorder()),
                     keyboardType: TextInputType.number,
                     onChanged: (v) => onChanged(i, r.copyWith(count: int.tryParse(v) ?? r.count)),
@@ -913,14 +980,14 @@ class _PeakTable extends StatelessWidget {
         const Divider(height: 1),
         ...rows.asMap().entries.map((e) {
           final i = e.key; final r = e.value;
-          final roleCtrl = TextEditingController(text: r.role);
           return Padding(
+            key: ValueKey(i),
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: roleCtrl,
+                  child: TextFormField(
+                    initialValue: r.role,
                     decoration: const InputDecoration(hintText: 'e.g., Cashier', border: OutlineInputBorder()),
                     onChanged: (v) => onChanged(i, r.copyWith(role: v)),
                   ),

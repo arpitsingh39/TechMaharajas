@@ -1,4 +1,4 @@
-// lib/staff/staff set up.dart
+// lib/staff/staff_setup.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -31,8 +31,12 @@ class _StaffSetupPageState extends State<StaffSetupPage> {
   static const String _roleInfoPath = '/api/roleinfo';
   static const String _addRolePath = '/api/addrole';
 
-  // If backend requires shop scoping
-  static const int _shopId = 1;
+  // Will be resolved from backend; required for all requests
+  int? _shopId;
+  bool _resolvingShop = false;
+
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -84,6 +88,64 @@ class _StaffSetupPageState extends State<StaffSetupPage> {
   @override
   void initState() {
     super.initState();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    await _resolveShopId();
+    await _fetchRoles();
+  }
+
+  // If the backend exposes a different endpoint for current shop, adjust below
+  Future<void> _resolveShopId() async {
+    setState(() {
+      _resolvingShop = true;
+      _error = null;
+    });
+    try {
+      int? resolved;
+
+      // Try current shop endpoint
+      try {
+        final uri = Uri.parse('$_base/api/shops/me');
+        final res = await http.get(uri, headers: {'Accept': 'application/json'});
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          final body = _safeDecode(res.body);
+          if (body is Map && body['id'] != null) {
+            resolved = _toInt(body['id']);
+          } else if (body is List && body.isNotEmpty && body.first is Map && body.first['id'] != null) {
+            resolved = _toInt(body.first['id']);
+          }
+        }
+      } catch (_) {}
+
+      // Fallback: first available shop
+      if (resolved == null) {
+        final uri = Uri.parse('$_base/api/shops').replace(queryParameters: {'limit': '1'});
+        final res = await http.get(uri, headers: {'Accept': 'application/json'});
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          final body = _safeDecode(res.body);
+          final list = _extractList(body);
+          if (list.isNotEmpty && list.first is Map) {
+            resolved = _toInt((list.first as Map)['id']);
+          }
+        }
+      }
+
+      setState(() {
+        _shopId = resolved;
+        if (_shopId == null) {
+          _error = 'No shop found. Create a shop first, then add roles.';
+        }
+      });
+    } finally {
+      if (mounted) setState(() => _resolvingShop = false);
+    }
+  }
+
+  // Allow external code to set the active shop id directly
+  void setShopId(int id) {
+    setState(() => _shopId = id);
     _fetchRoles();
   }
 
@@ -93,10 +155,13 @@ class _StaffSetupPageState extends State<StaffSetupPage> {
       _error = null;
     });
     try {
-      final uri = Uri.parse('$_base$_roleInfoPath').replace(queryParameters: {
-        'shop_id': _shopId.toString(),
-      });
+      if (_shopId == null) {
+        setState(() => _error = 'Missing shop. Create/select a shop to load roles.');
+        return;
+      }
 
+      final qp = <String, String>{'shop_id': _shopId.toString()};
+      final uri = Uri.parse('$_base$_roleInfoPath').replace(queryParameters: qp);
       final res = await http.get(uri, headers: {'Accept': 'application/json'});
 
       if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -126,17 +191,21 @@ class _StaffSetupPageState extends State<StaffSetupPage> {
   }
 
   Future<RoleData?> _createRole(RoleData r) async {
+    if (_shopId == null) {
+      _showSnack('No shop selected. Create/select a shop first.');
+      return null;
+    }
+
     final uri = Uri.parse('$_base$_addRolePath');
 
-    // Align to backend expectations: rname, hrate (number), workers, desc, shop_id
-    final payload = {
-  'shop_id': _shopId,                   // if required
-  'role_name': r.roleName.trim(),       // server requires this exact key
-  'hrate': r.hourlyRate,                // keep as number; change to 'hourly_rate' if server asks later
-  'workers': r.totalWorkers,            // change to 'total_workers' if server asks later
-  'desc': r.description.trim(),         // change to 'description' if server asks later
-};
-
+    // shop_id must be an int in JSON; do not stringify
+    final payload = <String, dynamic>{
+      'shop_id': _shopId,
+      'role_name': r.roleName.trim(),
+      'hrate': r.hourlyRate,
+      'workers': r.totalWorkers,
+      'desc': r.description.trim(),
+    }; // The validator requires numeric shop_id; jsonEncode keeps Dart int numeric. [web:71][web:74]
 
     try {
       final res = await http.post(
@@ -150,6 +219,10 @@ class _StaffSetupPageState extends State<StaffSetupPage> {
         print('POST $_addRolePath failed: ${res.statusCode} ${res.reasonPhrase}');
         // ignore: avoid_print
         print('Body: ${res.body}');
+        // If 500 with FK text: parent shop is missing; user must create shop first. [web:4][web:25]
+        if (_isFkViolation(res.body)) {
+          _showSnack('Cannot add role: selected shop does not exist on server. Create the shop and retry.');
+        }
         return null;
       }
 
@@ -158,14 +231,29 @@ class _StaffSetupPageState extends State<StaffSetupPage> {
       final mapped = _mapRoles(list);
       if (mapped.isNotEmpty) return mapped.first;
 
-      // If server doesn’t echo the role, return provisional
-      return r;
+      return r; // accept provisional if server doesn’t echo
     } catch (e) {
-      // On Flutter Web, a CORS/preflight issue will surface here as ClientException: Failed to fetch
       // ignore: avoid_print
       print('POST $_addRolePath network error: $e');
+      _showSnack('Network error while adding role.');
       return null;
     }
+  }
+
+  bool _isFkViolation(String body) {
+    final b = body.toLowerCase();
+    return b.contains('foreign key') ||
+        b.contains('23503') ||
+        b.contains('violates foreign key constraint') ||
+        b.contains('key (shop_id)') ||
+        b.contains('is not present in table "shops"');
+  }
+
+  int? _toInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
   }
 
   dynamic _safeDecode(String s) {
@@ -244,377 +332,350 @@ class _StaffSetupPageState extends State<StaffSetupPage> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredRoles = roles.where((role) =>
-        role.roleName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-        role.description.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+    final filteredRoles = roles
+        .where((role) =>
+            role.roleName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+            role.description.toLowerCase().contains(_searchQuery.toLowerCase()))
+        .toList();
 
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Header Section
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Roles Management',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
+    return ScaffoldMessenger(
+      key: _scaffoldMessengerKey,
+      child: Scaffold(
+        backgroundColor: Colors.grey[50],
+        body: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header Section
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Roles Management',
+                                style: TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[800],
+                                ),
+                              ),
+                              Text(
+                                _shopId == null ? 'No shop selected' : 'Active shop: $_shopId',
+                                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Colors.blue[600]!, Colors.blue[700]!],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.blue.withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton.icon(
+                            onPressed: _resolvingShop ? null : () => _showAddRoleDialog(),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              foregroundColor: Colors.white,
+                              shadowColor: Colors.transparent,
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: const Icon(Icons.add, size: 20),
+                            label: const Text(
+                              'Add Role',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                             ),
                           ),
-                        ],
-                      ),
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Colors.blue[600]!, Colors.blue[700]!],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.blue.withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
                         ),
-                        child: ElevatedButton.icon(
-                          onPressed: () => _showAddRoleDialog(),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            foregroundColor: Colors.white,
-                            shadowColor: Colors.transparent,
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.add, size: 20),
-                          label: const Text(
-                            'Add Role',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Stats Cards Row
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            'Total Roles',
+                            '${roles.length}',
+                            Icons.work_outline,
+                            Colors.blue,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Stats Cards Row
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          'Total Roles',
-                          '${roles.length}',
-                          Icons.work_outline,
-                          Colors.blue,
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildStatCard(
+                            'Total Workers',
+                            '${roles.fold<int>(0, (sum, role) => sum + role.totalWorkers)}',
+                            Icons.people_outline,
+                            Colors.green,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildStatCard(
-                          'Total Workers',
-                          '${roles.fold<int>(0, (sum, role) => sum + role.totalWorkers)}',
-                          Icons.people_outline,
-                          Colors.green,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            // Search Bar
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: TextField(
-                controller: _searchController,
-                onChanged: (value) => setState(() => _searchQuery = value),
-                decoration: InputDecoration(
-                  hintText: 'Search roles by name or description...',
-                  prefixIcon: Icon(Icons.search, color: Colors.grey[400]),
-                  suffixIcon: _searchQuery.isNotEmpty
-                      ? IconButton(
-                          icon: Icon(Icons.clear, color: Colors.grey[400]),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _searchQuery = '');
-                          },
-                        )
-                      : null,
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                ),
-              ),
-            ),
-
-            // Roles Table
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      blurRadius: 20,
-                      offset: const Offset(0, 4),
+                      ],
                     ),
                   ],
                 ),
-                child: Column(
-                  children: [
-                    // Table Header
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(16),
-                          topRight: Radius.circular(16),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.work, color: Colors.grey[600]),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Role Definitions (${filteredRoles.length})',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          const Spacer(),
-                          if (_loading)
-                            const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                        ],
-                      ),
+              ),
+
+              // Search Bar
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
                     ),
+                  ],
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (value) => setState(() => _searchQuery = value),
+                  decoration: InputDecoration(
+                    hintText: 'Search roles by name or description...',
+                    prefixIcon: Icon(Icons.search, color: Colors.grey[400]),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.clear, color: Colors.grey[400]),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  ),
+                ),
+              ),
 
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.amber[50],
-                            border: Border.all(color: Colors.amber[200]!),
-                            borderRadius: BorderRadius.circular(8),
+              // Roles Table
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      // Table Header
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            topRight: Radius.circular(16),
                           ),
-                          child: Text(
-                            _error!,
-                            style: TextStyle(color: Colors.amber[900], fontSize: 12),
-                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Icon(Icons.work, color: Colors.grey[600]),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Role Definitions (${filteredRoles.length})',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.grey[800],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_loading || _resolvingShop)
+                              const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                          ],
                         ),
                       ),
 
-                    // Table Content
-                    Expanded(
-                      child: RefreshIndicator(
-                        onRefresh: _fetchRoles,
-                        child: filteredRoles.isEmpty
-                            ? ListView(children: [SizedBox(height: 300, child: _buildEmptyState())])
-                            : SingleChildScrollView(
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                child: DataTable(
-                                  columnSpacing: 16,
-                                  headingRowHeight: 60,
-                                  dataRowHeight: 80,
-                                  sortColumnIndex: _sortColumnIndex,
-                                  sortAscending: _sortAscending,
-                                  headingTextStyle: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.grey[700],
-                                    fontSize: 14,
-                                  ),
-                                  columns: [
-                                    DataColumn(
-                                      label: const Text('Role Name'),
-                                      onSort: (i, asc) => _sortBy((r) => r.roleName, i, asc),
-                                    ),
-                                    DataColumn(
-                                      label: const Text('Hourly Rate'),
-                                      onSort: (i, asc) => _sortBy((r) => r.hourlyRate, i, asc),
-                                      numeric: true,
-                                    ),
-                                    DataColumn(
-                                      label: const Text('Total Workers'),
-                                      onSort: (i, asc) => _sortBy((r) => r.totalWorkers, i, asc),
-                                      numeric: true,
-                                    ),
-                                    const DataColumn(label: Text('Description')),
-                                    const DataColumn(label: Text('Actions')),
-                                  ],
-                                  rows: filteredRoles.map((role) {
-                                    return DataRow(
-                                      cells: [
-                                        // Role Name
-                                        DataCell(
-                                          Row(
-                                            children: [
-                                              Container(
-                                                padding: const EdgeInsets.all(8),
-                                                decoration: BoxDecoration(
-                                                  color: _getRoleColor(role.roleName).withOpacity(0.1),
-                                                  borderRadius: BorderRadius.circular(8),
-                                                ),
-                                                child: Icon(
-                                                  _getRoleIcon(role.roleName),
-                                                  color: _getRoleColor(role.roleName),
-                                                  size: 20,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Text(
-                                                role.roleName,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 14,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.amber[50],
+                              border: Border.all(color: Colors.amber[200]!),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _error!,
+                              style: TextStyle(color: Colors.amber[900], fontSize: 12),
+                            ),
+                          ),
+                        ),
 
-                                        // Hourly Rate (FittedBox to prevent overflow)
-                                        DataCell(
-                                          Container(
+                      // Table Content
+                      Expanded(
+                        child: RefreshIndicator(
+                          onRefresh: () async {
+                            if (_shopId == null) await _resolveShopId();
+                            await _fetchRoles();
+                          },
+                          child: filteredRoles.isEmpty
+                              ? ListView(children: [SizedBox(height: 300, child: _buildEmptyState())])
+                              : SingleChildScrollView(
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: DataTable(
+                                      columnSpacing: 16,
+                                      headingRowHeight: 60,
+                                      dataRowHeight: 80,
+                                      sortColumnIndex: _sortColumnIndex,
+                                      sortAscending: _sortAscending,
+                                      headingTextStyle: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey[700],
+                                        fontSize: 14,
+                                      ),
+                                      columns: [
+                                        DataColumn(
+                                          label: const Text('Role Name'),
+                                          onSort: (i, asc) => _sortBy((r) => r.roleName, i, asc),
+                                        ),
+                                        DataColumn(
+                                          label: const Text('Hourly Rate'),
+                                          onSort: (i, asc) => _sortBy((r) => r.hourlyRate, i, asc),
+                                          numeric: true,
+                                        ),
+                                        DataColumn(
+                                          label: const Text('Total Workers'),
+                                          onSort: (i, asc) => _sortBy((r) => r.totalWorkers, i, asc),
+                                          numeric: true,
+                                        ),
+                                        const DataColumn(label: Text('Description')),
+                                        const DataColumn(label: Text('Actions')),
+                                      ],
+                                      rows: filteredRoles.map((role) {
+                                        return DataRow(cells: [
+                                          // Role Name
+                                          DataCell(Row(children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: BoxDecoration(
+                                                color: _getRoleColor(role.roleName).withOpacity(0.1),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Icon(
+                                                _getRoleIcon(role.roleName),
+                                                color: _getRoleColor(role.roleName),
+                                                size: 20,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Text(role.roleName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                                          ])),
+
+                                          // Hourly Rate
+                                          DataCell(Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                             decoration: BoxDecoration(
                                               color: Colors.green.withOpacity(0.1),
                                               borderRadius: BorderRadius.circular(20),
-                                              border: Border.all(
-                                                color: Colors.green.withOpacity(0.3),
-                                                width: 1,
-                                              ),
+                                              border: Border.all(color: Colors.green.withOpacity(0.3), width: 1),
                                             ),
                                             child: FittedBox(
                                               fit: BoxFit.scaleDown,
                                               child: Text(
                                                 '${role.currency}${role.hourlyRate.toStringAsFixed(2)}',
-                                                style: const TextStyle(
-                                                  color: Colors.green,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
-                                                ),
+                                                style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 13),
                                               ),
                                             ),
-                                          ),
-                                        ),
+                                          )),
 
-                                        // Total Workers
-                                        DataCell(
-                                          Container(
+                                          // Total Workers
+                                          DataCell(Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.blue.withOpacity(0.1),
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Text(
-                                              '${role.totalWorkers}',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 13,
-                                                color: Colors.blue,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
+                                            decoration: BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                                            child: Text('${role.totalWorkers}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.blue)),
+                                          )),
 
-                                        // Description
-                                        DataCell(
-                                          SizedBox(
+                                          // Description
+                                          DataCell(SizedBox(
                                             width: 200,
                                             child: Text(
                                               role.description,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey[600],
-                                              ),
+                                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                                               maxLines: 2,
                                               overflow: TextOverflow.ellipsis,
                                             ),
-                                          ),
-                                        ),
+                                          )),
 
-                                        // Actions
-                                                                                DataCell(
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Container(
-                                                decoration: BoxDecoration(
-                                                  color: Colors.blue.withOpacity(0.1),
-                                                  borderRadius: BorderRadius.circular(8),
-                                                ),
-                                                child: IconButton(
-                                                  tooltip: 'Edit Role',
-                                                  icon: Icon(Icons.edit, size: 18, color: Colors.blue[600]),
-                                                  onPressed: () => _showEditRoleDialog(role),
-                                                ),
+                                          // Actions
+                                          DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
+                                            Container(
+                                              decoration: BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                                              child: IconButton(
+                                                tooltip: 'Edit Role',
+                                                icon: Icon(Icons.edit, size: 18, color: Colors.blue[600]),
+                                                onPressed: () => _showEditRoleDialog(role),
                                               ),
-                                              const SizedBox(width: 8),
-                                              Container(
-                                                decoration: BoxDecoration(
-                                                  color: Colors.red.withOpacity(0.1),
-                                                  borderRadius: BorderRadius.circular(8),
-                                                ),
-                                                child: IconButton(
-                                                  tooltip: 'Delete Role',
-                                                  icon: Icon(Icons.delete, size: 18, color: Colors.red[600]),
-                                                  onPressed: () => _showDeleteDialog(role),
-                                                ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                                              child: IconButton(
+                                                tooltip: 'Delete Role',
+                                                icon: Icon(Icons.delete, size: 18, color: Colors.red[600]),
+                                                onPressed: () => _showDeleteDialog(role),
                                               ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  }).toList(),
+                                            ),
+                                          ])),
+                                        ]);
+                                      }).toList(),
+                                    ),
+                                  ),
                                 ),
-                              ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -882,17 +943,20 @@ class _StaffSetupPageState extends State<StaffSetupPage> {
                           return;
                         }
 
-                        // Create via API, then update table
+                        // Ensure shop is ready
+                        if (_shopId == null) {
+                          _showSnack('No shop selected. Create/select a shop first.');
+                          return;
+                        }
+
                         final saved = await _createRole(newRole);
+                        if (!mounted) return;
+
                         if (saved != null) {
                           setState(() => roles.add(saved));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Role added successfully')),
-                          );
+                          _showSnack('Role added successfully');
                         } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Failed to add role on server')),
-                          );
+                          _showSnack('Failed to add role on server');
                         }
                         Navigator.pop(context);
                       },
@@ -1005,5 +1069,8 @@ class _StaffSetupPageState extends State<StaffSetupPage> {
       });
     });
   }
-}
 
+  void _showSnack(String msg) {
+    _scaffoldMessengerKey.currentState?.showSnackBar(SnackBar(content: Text(msg)));
+  }
+}

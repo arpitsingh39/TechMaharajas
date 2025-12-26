@@ -9,9 +9,28 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:http/http.dart' as http;
 import 'main.dart';
 
-class DashboardShell extends StatelessWidget {
+class DashboardShell extends StatefulWidget {
   final Widget child;
   const DashboardShell({super.key, required this.child});
+
+  @override
+  State<DashboardShell> createState() => _DashboardShellState();
+}
+
+class _DashboardShellState extends State<DashboardShell> {
+  late final ScrollController _navController;
+
+  @override
+  void initState() {
+    super.initState();
+    _navController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _navController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -56,78 +75,95 @@ class DashboardShell extends StatelessWidget {
                     child: Image.asset('assets/app_logo.png', fit: BoxFit.contain),
                   ),
                   const SizedBox(width: 12),
-                  // Horizontal menu
-                  for (final m in menu)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: TextButton.icon(
-                        onPressed: () => context.go(m.path),
-                        icon: Icon(
-                          m.icon,
-                          size: 18,
-                          color: currentPath.startsWith(m.path)
-                              ? Colors.white
-                              : Colors.white.withValues(alpha: 0.85),
-                        ),
-                        label: Text(
-                          m.label,
-                          style: TextStyle(
-                            color: currentPath.startsWith(m.path)
-                                ? Colors.white
-                                : Colors.white.withValues(alpha: 0.95),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                        ),
+
+                  // Compact primary nav buttons (icon-only) so primary actions
+                  // remain visible on narrow screens. We keep the full
+                  // scrollable menu afterwards so nothing is removed.
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        onPressed: () => context.go('/dashboard'),
+                        icon: const Icon(Icons.space_dashboard, color: Colors.white),
+                        tooltip: 'Dashboard',
                       ),
-                    ),
-                  const Spacer(),
-                  // Language selector (reusing existing chip)
-                  SizedBox(width: 180, child: _SidebarLanguageChip()),
-                  const SizedBox(width: 8),
-                  // Logout
-                  SizedBox(
-                    height: 40,
-                    child: FilledButton.tonal(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.10),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                      IconButton(
+                        onPressed: () => context.go('/staff/staff_setup'),
+                        icon: const Icon(Icons.store, color: Colors.white),
+                        tooltip: 'Roles',
                       ),
-                      onPressed: () {
-                        AppState.of(context).signOut();
-                        context.go('/');
-                      },
-                      child: const Row(
-                        children: [
-                          Icon(Icons.logout, size: 18),
-                          SizedBox(width: 8),
-                          Text('Logout'),
-                        ],
+                      IconButton(
+                        onPressed: () => context.go('/staff/staff_management'),
+                        icon: const Icon(Icons.person, color: Colors.white),
+                        tooltip: 'Staff',
+                      ),
+                      IconButton(
+                        onPressed: () => context.go('/shiftschedule'),
+                        icon: const Icon(Icons.event_note, color: Colors.white),
+                        tooltip: 'Shift Schedule',
+                      ),
+                      IconButton(
+                        onPressed: () => context.go('/reportpage'),
+                        icon: const Icon(Icons.bar_chart, color: Colors.white),
+                        tooltip: 'Reports / Payroll',
+                      ),
+                    ],
+                  ),
+
+                  // Horizontal menu (scrollable when needed). Keep all menu items.
+                  Expanded(
+                    child: Scrollbar(
+                      controller: _navController,
+                      thumbVisibility: true,
+                      child: SingleChildScrollView(
+                        controller: _navController,
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final m in menu)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                                child: TextButton.icon(
+                                  onPressed: () => context.go(m.path),
+                                  icon: Icon(
+                                    m.icon,
+                                    size: 18,
+                                    color: currentPath.startsWith(m.path)
+                                        ? Colors.white
+                                        : Colors.white.withValues(alpha: 0.85),
+                                  ),
+                                  label: Text(
+                                    m.label,
+                                    style: TextStyle(
+                                      color: currentPath.startsWith(m.path)
+                                          ? Colors.white
+                                          : Colors.white.withValues(alpha: 0.95),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
+
                   const SizedBox(width: 8),
-                  // Chatbot button on the far right of the top bar
-                  FilledButton.icon(
-                    onPressed: () => context.go('/chatbot'),
-                    icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                    label: const Text('Chatbot'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF3B82F6),
-                      foregroundColor: Colors.white,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
+                  // Compact logout icon so the Chatbot button remains visible
+                  IconButton(
+                    onPressed: () {
+                      AppState.of(context).signOut();
+                      context.go('/');
+                    },
+                    icon: const Icon(Icons.logout, color: Colors.white),
+                    tooltip: 'Logout',
                   ),
+                  const SizedBox(width: 8),
                 ],
               ),
             ),
@@ -137,7 +173,7 @@ class DashboardShell extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              child: child,
+              child: widget.child,
             ),
           ),
         ],
@@ -155,6 +191,10 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   DateTime selectedDate = DateTime.now();
+  // Controllers for horizontal scrollbars
+  late final ScrollController _topRowController;
+  late final ScrollController _weeklyRowController;
+  late final ScrollController _bottomRowController;
 
   // State fed from APIs (initialized with the same demo values as before).
   Map<String, double> dailyHours = {
@@ -199,7 +239,18 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
+    _topRowController = ScrollController();
+    _weeklyRowController = ScrollController();
+    _bottomRowController = ScrollController();
     _refreshAllForDate(selectedDate);
+  }
+
+  @override
+  void dispose() {
+    _topRowController.dispose();
+    _weeklyRowController.dispose();
+    _bottomRowController.dispose();
+    super.dispose();
   }
 
   Future<void> _refreshAllForDate(DateTime date) async {
@@ -358,13 +409,14 @@ class _DashboardPageState extends State<DashboardPage> {
           children: [
             // Header: title at left, Chatbot button at right on the same line
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Workforce Analytics Dashboard',
-                  style: text.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey[800],
+                Expanded(
+                  child: Text(
+                    'Workforce Analytics Dashboard',
+                    style: text.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[800],
+                    ),
                   ),
                 ),
                 FilledButton.icon(
@@ -385,71 +437,100 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
             const SizedBox(height: 30),
 
-            // Top Row: Daily Hours + Role Distribution
-            Row(
-              children: [
-                // Daily Hours with inline date picker
-                Expanded(
-                  flex: 2,
-                  child: _buildChartCard(
-                    title: 'Daily Work Hours by Employee',
-                    subtitle:
-                        'Hours worked on ${selectedDate.day}/${selectedDate.month}',
-                    chart: _buildDailyHoursChart(),
-                    showInlineDatePicker: true,
-                    height: 300,
-                  ),
+            // Top Row: Daily Hours + Role Distribution (horizontally scrollable)
+            Scrollbar(
+              controller: _topRowController,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _topRowController,
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    // Daily Hours with inline date picker
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
+                      child: _buildChartCard(
+                        title: 'Daily Work Hours by Employee',
+                        subtitle: 'Hours worked on ${selectedDate.day}/${selectedDate.month}',
+                        chart: _buildDailyHoursChart(),
+                        showInlineDatePicker: true,
+                        height: 300,
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    // Role Distribution
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.4),
+                      child: _buildChartCard(
+                        title: 'Staff Distribution by Role',
+                        subtitle: '',
+                        chart: _buildRoleDistributionCentered(),
+                        height: 300,
+                        hideChartSubtitle: true,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 20),
-                // Role Distribution
-                Expanded(
-                  flex: 1,
-                  child: _buildChartCard(
-                    title: 'Staff Distribution by Role',
-                    subtitle: '',
-                    chart: _buildRoleDistributionCentered(),
-                    height: 300,
-                    hideChartSubtitle: true,
-                  ),
-                ),
-              ],
+              ),
             ),
             const SizedBox(height: 20),
 
-            // Weekly Deviation (left) + Weekly Hours Line (right)
-            Row(
-              children: [
-                Expanded(
-                  flex: 1,
-                  child: _buildChartCard(
-                    title: 'Weekly Hours Deviation Analysis',
-                    subtitle: 'Daily deviation from target hours (Target: 10 hours)',
-                    chart: _buildWeeklyDeviationChart(),
-                    height: 280,
-                  ),
+            // Weekly Deviation (left) + Weekly Hours Line (right) — scrollable
+            Scrollbar(
+              controller: _weeklyRowController,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _weeklyRowController,
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.5),
+                      child: _buildChartCard(
+                        title: 'Weekly Hours Deviation Analysis',
+                        subtitle: 'Daily deviation from target hours (Target: 10 hours)',
+                        chart: _buildWeeklyDeviationChart(),
+                        height: 280,
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.5),
+                      child: _buildChartCard(
+                        title: 'Weekly Hours Trend',
+                        subtitle: 'Hours per day for the selected week',
+                        chart: _buildWeeklyHoursLineChart(),
+                        height: 280,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 20),
-                Expanded(
-                  flex: 1,
-                  child: _buildChartCard(
-                    title: 'Weekly Hours Trend',
-                    subtitle: 'Hours per day for the selected week',
-                    chart: _buildWeeklyHoursLineChart(),
-                    height: 280,
-                  ),
-                ),
-              ],
+              ),
             ),
             const SizedBox(height: 30),
 
-            // Bottom: Alerts & Summary
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: _buildAlertSection()),
-                const SizedBox(width: 20),
-                Expanded(child: _buildSummarySection()),
-              ],
+            // Bottom: Alerts & Summary — horizontally scrollable for narrow screens
+            Scrollbar(
+              controller: _bottomRowController,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _bottomRowController,
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.6),
+                      child: _buildAlertSection(),
+                    ),
+                    const SizedBox(width: 20),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.4),
+                      child: _buildSummarySection(),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -517,19 +598,42 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           ],
           const SizedBox(height: 20),
+          // Chart area: use LayoutBuilder so the chart receives explicit
+          // bounded constraints. Clip any visual overflow and show a loader
+          // centered over the chart when needed.
           Expanded(
-            child: Stack(
-              children: [
-                Positioned.fill(child: chart),
-                if (_loadingPie && title.contains('Distribution'))
-                  const _MiniLoader(),
-                if (_loadingBar && title.contains('Daily Work Hours'))
-                  const _MiniLoader(),
-                if (_loadingLine &&
-                    (title.contains('Trend') || title.contains('Deviation')))
-                  const _MiniLoader(),
-              ],
-            ),
+            child: LayoutBuilder(builder: (context, constraints) {
+              return Stack(
+                children: [
+                  // Constrain the chart to the available space so fl_chart
+                  // doesn't try to size itself larger than the card. Wrap
+                  // in an InteractiveViewer so the user can pan the chart
+                  // in both axes (scroll from bottom/right) when content
+                  // is larger than the viewport.
+                  Positioned.fill(
+                    child: ClipRect(
+                      child: InteractiveViewer(
+                        panEnabled: true,
+                        scaleEnabled: false,
+                        boundaryMargin: const EdgeInsets.all(40),
+                        child: SizedBox(
+                          width: constraints.maxWidth,
+                          height: constraints.maxHeight,
+                          child: chart,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (_loadingPie && title.contains('Distribution'))
+                    const _MiniLoader(),
+                  if (_loadingBar && title.contains('Daily Work Hours'))
+                    const _MiniLoader(),
+                  if (_loadingLine &&
+                      (title.contains('Trend') || title.contains('Deviation')))
+                    const _MiniLoader(),
+                ],
+              );
+            }),
           ),
         ],
       ),
@@ -947,7 +1051,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   color: Colors.orange[600], size: 24),
               const SizedBox(width: 8),
               const Text(
-                'Alerts & Notifications',
+                'Alerts',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -1046,7 +1150,7 @@ class _DashboardPageState extends State<DashboardPage> {
               Icon(Icons.analytics_outlined, color: Colors.blue[600], size: 24),
               const SizedBox(width: 8),
               const Text(
-                'Weekly Summary',
+                'Summary',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,

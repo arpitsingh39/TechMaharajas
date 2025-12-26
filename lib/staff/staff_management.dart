@@ -279,20 +279,21 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Staff Management',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Staff Management',
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[800],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       Container(
                         decoration: BoxDecoration(
@@ -483,7 +484,9 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
 
                           return SingleChildScrollView(
                             physics: const AlwaysScrollableScrollPhysics(),
-                            child: DataTable(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: DataTable(
                               columnSpacing: 20,
                               headingRowHeight: 60,
                               dataRowHeight: 70,
@@ -684,6 +687,7 @@ class _StaffManagementPageState extends State<StaffManagementPage> {
                                   ],
                                 );
                               }).toList(),
+                              ),
                             ),
                           );
                         }),
